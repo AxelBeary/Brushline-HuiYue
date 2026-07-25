@@ -10,6 +10,24 @@ export default async function artistRoutes(fastify) {
   // ─── 公开接口（客户端） ───
 
   /**
+   * GET /api/artists
+   * 获取所有画师列表（首页展示用）
+   */
+  fastify.get('/api/artists', async () => {
+    const artists = artistService.getAllArtists()
+    return artists.map(a => ({
+      id: a.id,
+      name: a.name,
+      subdomain: a.subdomain,
+      avatar: a.avatar,
+      bio: a.bio,
+      status: a.status,
+      weiboUrl: a.weibo_url,
+      bilibiliUrl: a.bilibili_url
+    }))
+  })
+
+  /**
    * GET /api/artists/:subdomain
    * 获取画师公开主页信息（作品、价格、状态、须知）
    */
