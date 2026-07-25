@@ -1,4 +1,4 @@
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth } from '../../shared/middleware/auth.js'
 import { mkdirSync, existsSync, unlinkSync, statSync } from 'fs'
 import { join, extname, resolve } from 'path'
 import { pipeline } from 'stream/promises'
@@ -7,9 +7,8 @@ import { nanoid } from 'nanoid'
 
 // ============================================
 // 文件上传路由
+// UPLOAD_DIR 优先由 app.js 通过插件选项传入，保证与静态服务路径一致
 // ============================================
-
-const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || './uploads')
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const RECOMMENDED_TYPES = ['image/webp', 'image/jpeg', 'image/png']
 
@@ -29,16 +28,19 @@ function checkFileType(mimeType, fileName) {
 
 /**
  * 保存上传文件，截断时自动清理残留
+ * @param {object} data - multipart file data
+ * @param {string} subDir - 子目录（如 'images/1'）
+ * @param {string} uploadDir - 上传根目录（由插件传入）
  */
-async function saveUpload(data, subDir) {
+async function saveUpload(data, subDir, uploadDir) {
   const ext = extname(data.filename) || '.png'
   const fileName = `${nanoid(12)}${ext}`
-  const fullPath = join(UPLOAD_DIR, subDir)
+  const fullPath = join(uploadDir, subDir)
 
   if (!existsSync(fullPath)) mkdirSync(fullPath, { recursive: true })
 
   const filePath = join(subDir, fileName)
-  const absPath = join(UPLOAD_DIR, filePath)
+  const absPath = join(uploadDir, filePath)
 
   await pipeline(data.file, createWriteStream(absPath))
 
@@ -52,7 +54,8 @@ async function saveUpload(data, subDir) {
   return { filePath, absPath, size }
 }
 
-export default async function uploadRoutes(fastify) {
+export default async function uploadRoutes(fastify, opts) {
+  const UPLOAD_DIR = opts.uploadDir || resolve(process.env.UPLOAD_DIR || './uploads')
 
   await fastify.register(import('@fastify/multipart'), {
     limits: { fileSize: MAX_FILE_SIZE, files: 5 }
@@ -65,7 +68,7 @@ export default async function uploadRoutes(fastify) {
     const data = await request.file()
     if (!data) return reply.code(400).send({ error: '未收到文件' })
 
-    const result = await saveUpload(data, join('images', String(request.artist.id)))
+    const result = await saveUpload(data, join('images', String(request.artist.id)), UPLOAD_DIR)
     if (!result) return reply.code(400).send({ error: '文件大小超过10MB限制' })
 
     const typeCheck = checkFileType(data.mimetype, data.filename)
@@ -87,7 +90,7 @@ export default async function uploadRoutes(fastify) {
     const data = await request.file()
     if (!data) return reply.code(400).send({ error: '未收到文件' })
 
-    const result = await saveUpload(data, 'references')
+    const result = await saveUpload(data, 'references', UPLOAD_DIR)
     if (!result) return reply.code(400).send({ error: '文件大小超过10MB限制' })
 
     const typeCheck = checkFileType(data.mimetype, data.filename)
@@ -109,7 +112,7 @@ export default async function uploadRoutes(fastify) {
     const data = await request.file()
     if (!data) return reply.code(400).send({ error: '未收到文件' })
 
-    const result = await saveUpload(data, join('deliverables', String(request.artist.id)))
+    const result = await saveUpload(data, join('deliverables', String(request.artist.id)), UPLOAD_DIR)
     if (!result) return reply.code(400).send({ error: '文件大小超过限制' })
 
     return {

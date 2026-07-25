@@ -1,5 +1,6 @@
-import { requireAdmin } from '../middleware/auth.js'
-import * as artistService from '../services/artistService.js'
+import { requireAdmin } from '../../shared/middleware/auth.js'
+import * as artistService from '../artist/artist.service.js'
+import * as adminService from './admin.service.js'
 
 // ============================================
 // 管理员路由 - 多画师管理
@@ -51,14 +52,6 @@ export default async function adminRoutes(fastify) {
    * 系统全局统计
    */
   fastify.get('/api/admin/stats', { preHandler: requireAdmin }, async () => {
-    const db = (await import('../db/connection.js')).default
-
-    const artistCount = db.prepare('SELECT COUNT(*) as c FROM artists').get().c
-    const orderCount = db.prepare('SELECT COUNT(*) as c FROM orders').get().c
-    const activeOrders = db.prepare(
-      "SELECT COUNT(*) as c FROM orders WHERE status NOT IN ('delivered', 'cancelled')"
-    ).get().c
-
-    return { artistCount, orderCount, activeOrders }
+    return adminService.getGlobalStats()
   })
 }

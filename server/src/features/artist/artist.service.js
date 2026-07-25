@@ -1,4 +1,4 @@
-import db from '../db/connection.js'
+import db from '../../db/connection.js'
 
 // ============================================
 // 画师服务

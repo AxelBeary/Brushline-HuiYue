@@ -1,13 +1,13 @@
-import { parseSession } from '../services/authService.js'
-import { getArtistById } from '../services/artistService.js'
+import { parseSession } from '../../features/auth/auth.service.js'
+import { getArtistById } from '../../features/artist/artist.service.js'
 
 // ============================================
-// 认证中间件 - 验证画师登录状态
+// 认证中间件 - 验证画师登录状态（跨 feature 共用）
 // ============================================
 
 /**
  * 要求画师已登录
- * 从 Authorization: Bearer <token> 中提取会话
+ * 从 Authorization: Bearer *** 中提取会话
  */
 export function requireAuth(request, reply, done) {
   const authHeader = request.headers.authorization

@@ -1,4 +1,4 @@
-import db from '../db/connection.js'
+import db from '../../db/connection.js'
 
 // ============================================
 // 订单服务 - 核心业务逻辑
@@ -183,6 +183,55 @@ export function addNote(orderId, content, createdBy = 'artist') {
   db.prepare('INSERT INTO order_notes (order_id, content, created_by) VALUES (?, ?, ?)')
     .run(orderId, content, createdBy)
   return getOrder(orderId)
+}
+
+/**
+ * 获取画师的订单列表（支持状态筛选）
+ */
+export function getArtistOrders(artistId, status) {
+  let query = `
+    SELECT o.*, t.name as tier_name, t.price as tier_price
+    FROM orders o
+    LEFT JOIN price_tiers t ON o.tier_id = t.id
+    WHERE o.artist_id = ?
+  `
+  const params = [artistId]
+  if (status) {
+    query += ' AND o.status = ?'
+    params.push(status)
+  }
+  query += ' ORDER BY o.created_at DESC'
+  return db.prepare(query).all(...params)
+}
+
+/**
+ * 仪表盘统计数据
+ */
+export function getArtistStats(artistId) {
+  const pendingCount = db.prepare(
+    "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status = 'pending'"
+  ).get(artistId).c
+  const activeCount = db.prepare(
+    "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status NOT IN ('delivered', 'cancelled')"
+  ).get(artistId).c
+  const monthRevenue = db.prepare(`
+    SELECT COALESCE(SUM(t.price), 0) as total
+    FROM orders o LEFT JOIN price_tiers t ON o.tier_id = t.id
+    WHERE o.artist_id = ? AND o.status IN ('done', 'delivered')
+      AND o.updated_at >= date('now', 'start of month')
+  `).get(artistId).total
+  const totalCompleted = db.prepare(
+    "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status IN ('done', 'delivered')"
+  ).get(artistId).c
+  return { pendingCount, activeCount, monthRevenue, totalCompleted }
+}
+
+/**
+ * 添加交付文件
+ */
+export function addDeliverable(orderId, filePath, fileName, fileSize) {
+  db.prepare('INSERT INTO deliverables (order_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)')
+    .run(orderId, filePath, fileName || '交付文件', fileSize || 0)
 }
 
 /**

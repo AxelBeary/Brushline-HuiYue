@@ -1,5 +1,5 @@
-import db from '../db/connection.js'
-import { getArtistByQq } from './artistService.js'
+import db from '../../db/connection.js'
+import { getArtistByQq } from '../artist/artist.service.js'
 import { randomInt, createHmac, timingSafeEqual } from 'crypto'
 
 // ============================================

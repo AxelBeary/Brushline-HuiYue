@@ -1,5 +1,5 @@
-import { generateLoginCode, verifyLoginCode, createSession } from '../services/authService.js'
-import { requireAuth } from '../middleware/auth.js'
+import { generateLoginCode, verifyLoginCode, createSession } from './auth.service.js'
+import { requireAuth } from '../../shared/middleware/auth.js'
 
 // ============================================
 // 认证路由 - 登录码获取与验证
@@ -16,11 +16,12 @@ function rateLimit(key, maxHits, windowMs) {
   return bucket.hits <= maxHits
 }
 
-// 定期清理过期桶
-setInterval(() => {
+// 定期清理过期桶（unref 避免阻止进程退出 / 测试挂起）
+const _cleanup = setInterval(() => {
   const now = Date.now()
   for (const [k, v] of rateBuckets) if (now > v.resetAt) rateBuckets.delete(k)
 }, 60_000)
+_cleanup.unref()
 
 const isDev = process.env.NODE_ENV !== 'production'
 

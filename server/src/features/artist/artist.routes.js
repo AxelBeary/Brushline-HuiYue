@@ -1,5 +1,5 @@
-import * as artistService from '../services/artistService.js'
-import { requireAuth } from '../middleware/auth.js'
+import * as artistService from './artist.service.js'
+import { requireAuth } from '../../shared/middleware/auth.js'
 
 // ============================================
 // 画师路由 - 公开主页 + 后台管理
@@ -11,19 +11,13 @@ export default async function artistRoutes(fastify) {
 
   /**
    * GET /api/artists
-   * 获取所有画师列表（首页展示用）
+   * 获取所有画师公开信息（首页列表）
    */
   fastify.get('/api/artists', async () => {
-    const artists = artistService.getAllArtists()
-    return artists.map(a => ({
-      id: a.id,
-      name: a.name,
-      subdomain: a.subdomain,
-      avatar: a.avatar,
-      bio: a.bio,
-      status: a.status,
-      weiboUrl: a.weibo_url,
-      bilibiliUrl: a.bilibili_url
+    return artistService.getAllArtists().map(a => ({
+      id: a.id, name: a.name, subdomain: a.subdomain,
+      avatar: a.avatar, bio: a.bio, status: a.status,
+      weiboUrl: a.weibo_url, bilibiliUrl: a.bilibili_url
     }))
   })
 

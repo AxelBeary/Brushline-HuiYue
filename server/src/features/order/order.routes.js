@@ -1,8 +1,7 @@
-import * as orderService from '../services/orderService.js'
-import { requireAuth } from '../middleware/auth.js'
-import { getArtistBySubdomain } from '../services/artistService.js'
-import { clamp, isValidQq } from '../services/validate.js'
-import db from '../db/connection.js'
+import * as orderService from './order.service.js'
+import { requireAuth } from '../../shared/middleware/auth.js'
+import { getArtistBySubdomain } from '../artist/artist.service.js'
+import { clamp, isValidQq } from '../../shared/validate.js'
 
 // ============================================
 // 订单路由 - 下单、查询、管理、交付
@@ -106,23 +105,7 @@ export default async function orderRoutes(fastify) {
    */
   fastify.get('/api/artist/orders', { preHandler: requireAuth }, async (request) => {
     const { status } = request.query || {}
-
-    let query = `
-      SELECT o.*, t.name as tier_name, t.price as tier_price
-      FROM orders o
-      LEFT JOIN price_tiers t ON o.tier_id = t.id
-      WHERE o.artist_id = ?
-    `
-    const params = [request.artist.id]
-
-    if (status) {
-      query += ' AND o.status = ?'
-      params.push(status)
-    }
-
-    query += ' ORDER BY o.created_at DESC'
-
-    return db.prepare(query).all(...params)
+    return orderService.getArtistOrders(request.artist.id, status)
   })
 
   /**
@@ -257,8 +240,7 @@ export default async function orderRoutes(fastify) {
     const { filePath, fileName, fileSize } = request.body || {}
     if (!filePath) return reply.code(400).send({ error: '缺少文件路径' })
 
-    db.prepare('INSERT INTO deliverables (order_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)')
-      .run(order.id, filePath, fileName || '交付文件', fileSize || 0)
+    orderService.addDeliverable(order.id, filePath, fileName, fileSize)
 
     // 自动将状态改为已交付
     orderService.updateOrderStatus(order.id, 'delivered')
@@ -271,28 +253,6 @@ export default async function orderRoutes(fastify) {
    * 仪表盘统计数据
    */
   fastify.get('/api/artist/stats', { preHandler: requireAuth }, async (request) => {
-    const artistId = request.artist.id
-
-    const pendingCount = db.prepare(
-      "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status = 'pending'"
-    ).get(artistId).c
-
-    const activeCount = db.prepare(
-      "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status NOT IN ('delivered', 'cancelled')"
-    ).get(artistId).c
-
-    const monthRevenue = db.prepare(`
-      SELECT COALESCE(SUM(t.price), 0) as total
-      FROM orders o
-      LEFT JOIN price_tiers t ON o.tier_id = t.id
-      WHERE o.artist_id = ? AND o.status IN ('done', 'delivered')
-        AND o.updated_at >= date('now', 'start of month')
-    `).get(artistId).total
-
-    const totalCompleted = db.prepare(
-      "SELECT COUNT(*) as c FROM orders WHERE artist_id = ? AND status IN ('done', 'delivered')"
-    ).get(artistId).c
-
-    return { pendingCount, activeCount, monthRevenue, totalCompleted }
+    return orderService.getArtistStats(request.artist.id)
   })
 }
