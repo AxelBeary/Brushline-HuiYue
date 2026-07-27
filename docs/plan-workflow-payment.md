@@ -205,11 +205,13 @@ I4. 收款节点数量 ∈ [1, 20]
 
 > 管理员可在后台修改此模板。修改后只影响**新画师**，已有画师不受影响。
 
-### 迁移 v4（`init.js` MIGRATIONS 追加）
+### 迁移 v5（`init.js` MIGRATIONS 追加）
+
+> ⚠️ v4 已被 `add_token_version`（v0.7.0）占用。v0.7.0 还引入了画师软删除（`deleted_at`）和订单分页（`{items}` 格式），workflow service 的查询需自动过滤 `deleted_at IS NULL`。
 
 ```js
 {
-  version: 4,
+  version: 5,
   name: 'workflow_stages_and_default_template',
   up(database) {
     // 1. 建表
@@ -510,7 +512,7 @@ createArtist()
 
 | # | 任务 | 涉及文件 | 验收标准 |
 |---|------|---------|---------|
-| 1A-1 | 迁移 v4：建三表 + 默认模板种子（7 行）+ 存量画师补种子 | `server/src/db/init.js` | 老库重启后三表存在，alice/bob 各有 7 节点种子；模板表有 7 行 |
+| 1A-1 | 迁移 v5：建三表 + 默认模板种子（7 行）+ 存量画师补种子 | `server/src/db/init.js` | 老库重启后三表存在，alice/bob 各有 7 节点种子；模板表有 7 行 |
 | 1A-2 | workflow service：CRUD + 不变式 I1~I4 + 尾款重算 + 开关/排序/删除的原子操作 | `server/src/features/artist/workflow.service.js`（新） | TC-W-01~19 全过 |
 | 1A-3 | workflow 路由 + JSON Schema（画师端 6 个接口） | `server/src/features/artist/artist.routes.js` | curl 验证，非法请求 422 |
 | 1A-4 | 公开接口 + 速率限制 | `server/src/features/artist/artist.routes.js` | 未认证可访问，限流生效 |
@@ -574,7 +576,7 @@ createArtist()
 | TC-W-12 | 单期 < 500 | 拒绝 |
 | TC-W-13 | reorder 使收款节点成为最后收款节点 | 新尾款 isFinal=true 且基点重算，原尾款保留比例 |
 | TC-W-14 | 改名后 GET | 返回新名（模板是活的） |
-| TC-W-15 | 存量画师迁移 | 迁移后老画师有完整 7 节点种子，重启不重复插入 |
+| TC-W-15 | 存量画师迁移 | 迁移 v5 后老画师有完整 7 节点种子，重启不重复插入 |
 | TC-W-16 | 管理员编辑画师 workflow | 与画师自操作结果一致 |
 | TC-W-17 | 默认模板 CRUD + reset | 修改后新画师用新模板；reset 后恢复出厂 7 行 |
 | TC-W-18 | 定金即全款（1 期 100%） | 唯一收款节点 isFinal=true，basisPoints=10000 |
@@ -607,7 +609,7 @@ createArtist()
 
 ## 十二、开工前检查清单
 
-- [ ] 迁移 v4 含三表 + 默认模板种子（7 行）+ 存量画师补种子（幂等）
+- [ ] 迁移 v5 含三表 + 默认模板种子（7 行）+ 存量画师补种子（幂等）
 - [ ] 服务层不变式 I1~I4 在**每个**写操作中事务化强制
 - [ ] 所有写入路由有 Fastify JSON Schema（additionalProperties: false）
 - [ ] 公开 workflow 接口纳入速率限制
