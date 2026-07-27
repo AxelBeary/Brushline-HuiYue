@@ -439,7 +439,7 @@ CREATE INDEX IF NOT EXISTS idx_greeting_artist ON greeting_templates(artist_id, 
 | T5-2 | 硬编码颜色扫描替换 | 全部视图 |
 | T5-3 | 暗色 + 5 色逐页走查 | 全部视图 |
 
-**总计约 9-11 小时**。与流程与比例计划无代码依赖（迁移号：workflow=v4，greeting=v5）。
+**总计约 9-11 小时**。与流程与比例计划无代码依赖（迁移号：workflow=v5，greeting=v6）。
 
 ---
 
