@@ -1,0 +1,335 @@
+import db from '../../db/connection.js'
+
+// ============================================
+// 流程与比例服务
+// 不变式（每次写入事务内强制）：
+//   I1. 至少 1 个收款节点
+//   I2. 尾款（最后收款节点）basis_points = 10000 − Σ其他
+//   I3. 所有收款节点 basis_points ≥ 500
+//   I4. 收款节点数量 ∈ [1, 20]
+// ============================================
+
+const MIN_BP = 500
+const MAX_BP = 10000
+const TOTAL_BP = 10000
+const MAX_INSTALLMENTS = 20
+const DEFAULT_NEW_BP = 1000
+
+// ─── 内部工具 ───
+
+function getStages(artistId) {
+  return db.prepare(
+    'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
+  ).all(artistId)
+}
+
+function getStageById(id) {
+  return db.prepare('SELECT * FROM artist_workflow_stages WHERE id = ?').get(id)
+}
+
+/** 找到最后一个收款节点（尾款） */
+function findFinal(stages) {
+  const payStages = stages.filter(s => s.takes_payment)
+  return payStages.length > 0 ? payStages[payStages.length - 1] : null
+}
+
+/** 重算尾款基点并写入 */
+function recalcFinal(artistId) {
+  const stages = getStages(artistId)
+  const final = findFinal(stages)
+  if (!final) return
+  const othersSum = stages
+    .filter(s => s.takes_payment && s.id !== final.id)
+    .reduce((sum, s) => sum + s.basis_points, 0)
+  const finalBp = TOTAL_BP - othersSum
+  db.prepare('UPDATE artist_workflow_stages SET basis_points = ? WHERE id = ?')
+    .run(finalBp, final.id)
+}
+
+/** 校验不变式 I1~I4，违反则抛错 */
+function assertInvariants(artistId) {
+  const stages = getStages(artistId)
+  const payStages = stages.filter(s => s.takes_payment)
+
+  // I1
+  if (payStages.length === 0) throw new Error('至少需要保留 1 个收款节点')
+  // I4
+  if (payStages.length > MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
+  // I3
+  for (const s of payStages) {
+    if (s.basis_points < MIN_BP) throw new Error(`「${s.name}」的比例不能低于 5%`)
+  }
+  // I2
+  const sum = payStages.reduce((acc, s) => acc + s.basis_points, 0)
+  if (sum !== TOTAL_BP) throw new Error('比例总和必须等于 100%')
+}
+
+function toCamel(row) {
+  if (!row) return null
+  const stages = getStages(row.artist_id)
+  const final = findFinal(stages)
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    sortOrder: row.sort_order,
+    takesPayment: !!row.takes_payment,
+    basisPoints: row.basis_points,
+    isFinal: final ? final.id === row.id : false
+  }
+}
+
+function listCamel(artistId) {
+  const stages = getStages(artistId)
+  const final = findFinal(stages)
+  return stages.map(s => ({
+    id: s.id, name: s.name, description: s.description,
+    sortOrder: s.sort_order, takesPayment: !!s.takes_payment,
+    basisPoints: s.basis_points, isFinal: final ? final.id === s.id : false
+  }))
+}
+
+// ─── 公开 API ───
+
+/** 获取画师的流程节点列表（含 isFinal 计算字段） */
+export function getWorkflow(artistId) {
+  return listCamel(artistId)
+}
+
+/** 添加节点（插入到倒数第二位，R3） */
+export function addStage(artistId, { name, description }) {
+  return db.transaction(() => {
+    const stages = getStages(artistId)
+    const maxOrder = stages.length > 0 ? stages[stages.length - 1].sort_order : 0
+    // 插入到最后一项之前
+    const insertAt = stages.length > 1 ? stages[stages.length - 2].sort_order + 1 : maxOrder + 1
+    // 把最后一项及之后的都往后挪
+    db.prepare(
+      'UPDATE artist_workflow_stages SET sort_order = sort_order + 1 WHERE artist_id = ? AND sort_order >= ?'
+    ).run(artistId, insertAt)
+    const result = db.prepare(
+      'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, 0, NULL)'
+    ).run(artistId, name, description || null, insertAt)
+    return toCamel(getStageById(result.lastInsertRowid))
+  })()
+}
+
+/** 改名 / 改描述 / 切换收款开关 */
+export function updateStage(artistId, stageId, fields) {
+  return db.transaction(() => {
+    // P1-9: 在事务内获取 stage，避免 TOCTOU
+    const stage = getStageById(stageId)
+    if (!stage || stage.artist_id !== artistId) throw new Error('节点不存在')
+
+    const stages = getStages(artistId)
+    const final = findFinal(stages)
+    const isFinal = final && final.id === stageId
+
+    // 改名/描述（无副作用）
+    if (fields.name !== undefined) {
+      if (!String(fields.name || '').trim()) throw new Error('节点名称不能为空')
+      db.prepare('UPDATE artist_workflow_stages SET name = ? WHERE id = ?')
+        .run(String(fields.name).trim(), stageId)
+    }
+    if (fields.description !== undefined) {
+      db.prepare('UPDATE artist_workflow_stages SET description = ? WHERE id = ?')
+        .run(fields.description || null, stageId)
+    }
+
+    // 切换收款开关
+    if (fields.takesPayment !== undefined) {
+      const wantOn = !!fields.takesPayment
+
+      if (isFinal && !wantOn) {
+        throw new Error('尾款节点的收款不可关闭')
+      }
+
+      if (wantOn && !stage.takes_payment) {
+        // 开启收款
+        const payCount = stages.filter(s => s.takes_payment).length
+        if (payCount >= MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
+        // 从尾款扣除
+        let newBp = DEFAULT_NEW_BP
+        if (final && final.basis_points - newBp < MIN_BP) {
+          newBp = final.basis_points - MIN_BP
+          if (newBp < MIN_BP) throw new Error('尾款比例不足，无法开启新收款节点')
+        }
+        db.prepare('UPDATE artist_workflow_stages SET takes_payment = 1, basis_points = ? WHERE id = ?')
+          .run(newBp, stageId)
+        if (final) {
+          db.prepare('UPDATE artist_workflow_stages SET basis_points = basis_points - ? WHERE id = ?')
+            .run(newBp, final.id)
+        }
+      } else if (!wantOn && stage.takes_payment) {
+        // 关闭收款 → 比例并入尾款
+        if (isFinal) throw new Error('尾款节点的收款不可关闭')
+        db.prepare('UPDATE artist_workflow_stages SET takes_payment = 0, basis_points = NULL WHERE id = ?')
+          .run(stageId)
+        if (final) {
+          db.prepare('UPDATE artist_workflow_stages SET basis_points = basis_points + ? WHERE id = ?')
+            .run(stage.basis_points, final.id)
+        }
+      }
+    }
+
+    assertInvariants(artistId)
+    return toCamel(getStageById(stageId))
+  })()
+}
+
+/** 删除节点（尾款拒绝；收款节点比例并入尾款） */
+export function deleteStage(artistId, stageId) {
+  const stage = getStageById(stageId)
+  if (!stage || stage.artist_id !== artistId) throw new Error('节点不存在')
+
+  return db.transaction(() => {
+    const stages = getStages(artistId)
+    if (stages.length <= 1) throw new Error('至少保留 1 个流程节点')
+
+    const final = findFinal(stages)
+    if (final && final.id === stageId) throw new Error('尾款节点不可删除')
+
+    // 收款节点：比例并入尾款
+    if (stage.takes_payment && final) {
+      db.prepare('UPDATE artist_workflow_stages SET basis_points = basis_points + ? WHERE id = ?')
+        .run(stage.basis_points, final.id)
+    }
+
+    db.prepare('DELETE FROM artist_workflow_stages WHERE id = ?').run(stageId)
+    // 压缩 sort_order
+    const remaining = getStages(artistId)
+    remaining.forEach((s, i) => {
+      if (s.sort_order !== i + 1) {
+        db.prepare('UPDATE artist_workflow_stages SET sort_order = ? WHERE id = ?').run(i + 1, s.id)
+      }
+    })
+    assertInvariants(artistId)
+    return { success: true }
+  })()
+}
+
+/** 拖拽排序（尾款可能易主，自动重算） */
+export function reorderStages(artistId, orderedIds) {
+  return db.transaction(() => {
+    const stages = getStages(artistId)
+    const idSet = new Set(stages.map(s => s.id))
+    if (orderedIds.length !== stages.length) throw new Error('排序数组长度不匹配')
+    for (const id of orderedIds) {
+      if (!idSet.has(id)) throw new Error('排序数组包含无效节点')
+    }
+    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('排序数组有重复')
+
+    orderedIds.forEach((id, i) => {
+      db.prepare('UPDATE artist_workflow_stages SET sort_order = ? WHERE id = ? AND artist_id = ?')
+        .run(i + 1, id, artistId)
+    })
+    // 尾款可能易主 → 重算
+    recalcFinal(artistId)
+    assertInvariants(artistId)
+    return listCamel(artistId)
+  })()
+}
+
+/** 批量保存比例（比例条 [保存比例] 按钮） */
+export function savePayment(artistId, nodes) {
+  return db.transaction(() => {
+    const stages = getStages(artistId)
+    const final = findFinal(stages)
+    if (!final) throw new Error('无尾款节点')
+
+    for (const n of nodes) {
+      const stage = stages.find(s => s.id === n.id)
+      if (!stage) throw new Error('节点不存在')
+      if (stage.id === final.id) throw new Error('不能直接修改尾款比例')
+      if (!stage.takes_payment) throw new Error(`「${stage.name}」不是收款节点`)
+      if (n.basisPoints < MIN_BP) throw new Error(`「${stage.name}」的比例不能低于 5%`)
+      if (n.basisPoints > MAX_BP - MIN_BP) throw new Error(`「${stage.name}」的比例过高，尾款不能低于 5%`)
+    }
+
+    for (const n of nodes) {
+      db.prepare('UPDATE artist_workflow_stages SET basis_points = ? WHERE id = ?')
+        .run(n.basisPoints, n.id)
+    }
+    recalcFinal(artistId)
+    assertInvariants(artistId)
+    return listCamel(artistId)
+  })()
+}
+
+// ─── 默认模板 ───
+
+const DEFAULT_TEMPLATE = [
+  { name: '定稿', description: '双方确认稿件需求与规格', sort_order: 1, takes_payment: 0, basis_points: null },
+  { name: '排期确认', description: '确认排期，收取定金', sort_order: 2, takes_payment: 1, basis_points: 3000 },
+  { name: '草稿确认', description: null, sort_order: 3, takes_payment: 0, basis_points: null },
+  { name: '线稿确认', description: null, sort_order: 4, takes_payment: 0, basis_points: null },
+  { name: '上色确认', description: null, sort_order: 5, takes_payment: 0, basis_points: null },
+  { name: '完稿确认', description: null, sort_order: 6, takes_payment: 0, basis_points: null },
+  { name: '交付', description: '交付成品，收取尾款', sort_order: 7, takes_payment: 1, basis_points: 7000 },
+]
+
+/** 从默认模板复制到画师 */
+export function seedArtistStages(artistId) {
+  const count = db.prepare(
+    'SELECT COUNT(*) AS c FROM artist_workflow_stages WHERE artist_id = ?'
+  ).get(artistId).c
+  if (count > 0) return // 幂等
+
+  // 优先从 default_workflow_template 读取（管理员可能已修改）
+  const tpl = db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all()
+  const source = tpl.length > 0 ? tpl : DEFAULT_TEMPLATE
+
+  const insert = db.prepare(
+    'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?, ?)'
+  )
+  for (const t of source) {
+    insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points)
+  }
+}
+
+/** 从 default_workflow_template 复制到画师（createArtist 调用） */
+export function copyTemplateToArtist(artistId) {
+  seedArtistStages(artistId)
+}
+
+// ─── 管理员：默认模板 CRUD ───
+
+export function getDefaultTemplate() {
+  return db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all()
+}
+
+export function updateDefaultTemplate(nodes) {
+  return db.transaction(() => {
+    db.prepare('DELETE FROM default_workflow_template').run()
+    const insert = db.prepare(
+      'INSERT INTO default_workflow_template (name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?)'
+    )
+    let paySum = 0
+    let payCount = 0
+    nodes.forEach((n, i) => {
+      const bp = n.takesPayment ? (n.basisPoints || 0) : null
+      // P1-1: 收款节点必须满足最低比例
+      if (n.takesPayment && bp < MIN_BP) throw new Error(`收款节点「${n.name}」比例不能低于 ${MIN_BP / 100}%`)
+      insert.run(n.name, n.description || null, i + 1, n.takesPayment ? 1 : 0, bp)
+      if (n.takesPayment) { paySum += bp; payCount++ }
+    })
+    // 校验
+    if (payCount === 0) throw new Error('模板至少需要 1 个收款节点')
+    if (payCount > MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
+    if (paySum !== TOTAL_BP) throw new Error('收款比例总和必须等于 100%')
+    return getDefaultTemplate()
+  })()
+}
+
+export function resetDefaultTemplate() {
+  return db.transaction(() => {
+    db.prepare('DELETE FROM default_workflow_template').run()
+    const insert = db.prepare(
+      'INSERT INTO default_workflow_template (name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?)'
+    )
+    for (const t of DEFAULT_TEMPLATE) {
+      insert.run(t.name, t.description, t.sort_order, t.takes_payment, t.basis_points)
+    }
+    return getDefaultTemplate()
+  })()
+}
