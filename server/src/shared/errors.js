@@ -65,6 +65,20 @@ export const E = {
   // 通用
   NOT_FOUND: 'NOT_FOUND',
   VALIDATION: 'VALIDATION',
+  RATE_LIMITED: 'RATE_LIMITED',
+  MISSING_PARAMS: 'MISSING_PARAMS',
+
+  // 输入校验
+  QQ_REQUIRED: 'QQ_REQUIRED',
+  QQ_FORMAT: 'QQ_FORMAT',
+  MISSING_CREDENTIALS: 'MISSING_CREDENTIALS',
+
+  // 订单输入
+  ARTIST_NOT_OPEN: 'ARTIST_NOT_OPEN',
+  RULES_NOT_AGREED: 'RULES_NOT_AGREED',
+  STATUS_REQUIRED: 'STATUS_REQUIRED',
+  NOTE_EMPTY: 'NOTE_EMPTY',
+  ORDER_INVALID_ID: 'ORDER_INVALID_ID',
 
   // 画师扩展
   SUBDOMAIN_FORMAT: 'SUBDOMAIN_FORMAT',
@@ -83,4 +97,87 @@ export const E = {
 
   // 管理员
   ADMIN_VERIFY_FAILED: 'ADMIN_VERIFY_FAILED'
+}
+
+// ─── 错误码 → 中文用户友好消息 ───
+// 全局错误处理器优先查此表，未命中则回退到 error.message
+export const ERROR_MESSAGES = {
+  // 认证
+  NOT_LOGGED_IN: '请先登录',
+  SESSION_EXPIRED: '登录已过期，请重新登录',
+  ACCOUNT_NOT_FOUND: '账号不存在',
+  ACCOUNT_DISABLED: '账号已被禁用',
+  TOKEN_REVOKED: '登录已失效，请重新登录',
+  ADMIN_REQUIRED: '需要管理员权限',
+  CODE_INVALID: '登录码不正确',
+  CODE_EXPIRED: '登录码已过期，请重新获取',
+  CODE_TOO_MANY_ATTEMPTS: '尝试次数过多，请稍后再试',
+  QQ_NOT_REGISTERED: '该QQ号尚未注册',
+
+  // 画师
+  ARTIST_NOT_FOUND: '画师不存在',
+  NAME_EMPTY: '名称不能为空',
+  CODE_FORMAT: '身份码格式不正确（仅限字母和数字）',
+  CODE_TAKEN: '该身份码已被使用',
+  INVALID_STATUS: '无效的状态值',
+  INVALID_URL: '链接格式不正确',
+  SUBDOMAIN_FORMAT: '子域名格式不正确',
+
+  // 流程
+  STAGE_NOT_FOUND: '流程节点不存在',
+  STAGE_NAME_EMPTY: '节点名称不能为空',
+  FINAL_CANNOT_DISABLE: '交付节点不能禁用',
+  FINAL_CANNOT_DELETE: '交付节点不能删除',
+  FINAL_READONLY: '交付节点不可修改',
+  MAX_INSTALLMENTS: '分期数已达上限',
+  FINAL_TOO_LOW: '尾款比例过低',
+  MIN_STAGES: '流程节点数不能少于最低要求',
+  REORDER_LENGTH: '排序列表长度不匹配',
+  REORDER_INVALID: '排序列表包含无效节点',
+  REORDER_DUPLICATE: '排序列表存在重复',
+  NO_FINAL: '缺少交付节点',
+  NOT_PAYMENT_STAGE: '该节点不是收款节点',
+  BP_TOO_LOW: '比例过低',
+  BP_TOO_HIGH: '比例过高',
+  NO_PAYMENT_NODE: '没有收款节点',
+  SUM_NOT_100: '各期比例之和必须为100%',
+
+  // 订单
+  ORDER_NOT_FOUND: '订单不存在',
+  INVALID_TRANSITION: '不允许的状态变更',
+  DELIVER_WRONG_STATUS: '当前状态不允许交付',
+  TIER_NOT_FOUND: '价格档位不存在',
+  ORDER_INVALID_STATUS: '无效的订单状态',
+  QUEUE_EMPTY: '排序列表不能为空',
+  QUEUE_NOT_OWNED: '队列中包含不属于你的订单',
+  QUEUE_LENGTH: '排序列表长度与实际队列不匹配',
+  QUEUE_DUPLICATE: '排序列表存在重复订单',
+  INVALID_PRIORITY: '无效的优先级',
+  ORDER_INVALID_ID: '无效的订单ID',
+
+  // 上传
+  ILLEGAL_FILE_TYPE: '不支持的文件类型',
+  UNSUPPORTED_FORMAT: '不支持的文件格式',
+  ILLEGAL_PATH: '非法的文件路径',
+  MISSING_FILE: '缺少文件',
+
+  // 通用
+  NOT_FOUND: '资源不存在',
+  VALIDATION: '请求参数格式不正确',
+  RATE_LIMITED: '操作过于频繁，请稍后再试',
+  MISSING_PARAMS: '缺少必要参数',
+
+  // 输入校验
+  QQ_REQUIRED: '请填写QQ号',
+  QQ_FORMAT: 'QQ号格式不正确（5-15位数字）',
+  MISSING_CREDENTIALS: '请输入QQ号和登录码',
+
+  // 订单输入
+  ARTIST_NOT_OPEN: '该画师当前不接受新约稿',
+  RULES_NOT_AGREED: '请先阅读并同意约稿须知',
+  STATUS_REQUIRED: '请指定状态',
+  NOTE_EMPTY: '备注内容不能为空',
+
+  // 管理员
+  ADMIN_VERIFY_FAILED: '管理员验证失败'
 }
