@@ -15,6 +15,10 @@ const TOTAL_BP = 10000
 const MAX_INSTALLMENTS = 20
 const DEFAULT_NEW_BP = 1000
 
+// 业务错误：返回 400 而非 500
+class BizError extends Error { constructor(msg) { super(msg); this.statusCode = 400 } }
+function bizErr(msg) { return new BizError(msg) }
+
 // ─── 内部工具 ───
 
 function getStages(artistId) {
@@ -52,16 +56,16 @@ function assertInvariants(artistId) {
   const payStages = stages.filter(s => s.takes_payment)
 
   // I1
-  if (payStages.length === 0) throw new Error('至少需要保留 1 个收款节点')
+  if (payStages.length === 0) throw bizErr('至少需要保留 1 个收款节点')
   // I4
-  if (payStages.length > MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
+  if (payStages.length > MAX_INSTALLMENTS) throw bizErr(`最多 ${MAX_INSTALLMENTS} 期`)
   // I3
   for (const s of payStages) {
-    if (s.basis_points < MIN_BP) throw new Error(`「${s.name}」的比例不能低于 5%`)
+    if (s.basis_points < MIN_BP) throw bizErr(`「${s.name}」的比例不能低于 5%`)
   }
   // I2
   const sum = payStages.reduce((acc, s) => acc + s.basis_points, 0)
-  if (sum !== TOTAL_BP) throw new Error('比例总和必须等于 100%')
+  if (sum !== TOTAL_BP) throw bizErr('比例总和必须等于 100%')
 }
 
 function toCamel(row) {
@@ -119,7 +123,7 @@ export function updateStage(artistId, stageId, fields) {
   return db.transaction(() => {
     // P1-9: 在事务内获取 stage，避免 TOCTOU
     const stage = getStageById(stageId)
-    if (!stage || stage.artist_id !== artistId) throw new Error('节点不存在')
+    if (!stage || stage.artist_id !== artistId) throw bizErr('节点不存在')
 
     const stages = getStages(artistId)
     const final = findFinal(stages)
@@ -127,7 +131,7 @@ export function updateStage(artistId, stageId, fields) {
 
     // 改名/描述（无副作用）
     if (fields.name !== undefined) {
-      if (!String(fields.name || '').trim()) throw new Error('节点名称不能为空')
+      if (!String(fields.name || '').trim()) throw bizErr('节点名称不能为空')
       db.prepare('UPDATE artist_workflow_stages SET name = ? WHERE id = ?')
         .run(String(fields.name).trim(), stageId)
     }
@@ -141,18 +145,18 @@ export function updateStage(artistId, stageId, fields) {
       const wantOn = !!fields.takesPayment
 
       if (isFinal && !wantOn) {
-        throw new Error('尾款节点的收款不可关闭')
+        throw bizErr('尾款节点的收款不可关闭')
       }
 
       if (wantOn && !stage.takes_payment) {
         // 开启收款
         const payCount = stages.filter(s => s.takes_payment).length
-        if (payCount >= MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
+        if (payCount >= MAX_INSTALLMENTS) throw bizErr(`最多 ${MAX_INSTALLMENTS} 期`)
         // 从尾款扣除
         let newBp = DEFAULT_NEW_BP
         if (final && final.basis_points - newBp < MIN_BP) {
           newBp = final.basis_points - MIN_BP
-          if (newBp < MIN_BP) throw new Error('尾款比例不足，无法开启新收款节点')
+          if (newBp < MIN_BP) throw bizErr('尾款比例不足，无法开启新收款节点')
         }
         db.prepare('UPDATE artist_workflow_stages SET takes_payment = 1, basis_points = ? WHERE id = ?')
           .run(newBp, stageId)
@@ -162,7 +166,7 @@ export function updateStage(artistId, stageId, fields) {
         }
       } else if (!wantOn && stage.takes_payment) {
         // 关闭收款 → 比例并入尾款
-        if (isFinal) throw new Error('尾款节点的收款不可关闭')
+        if (isFinal) throw bizErr('尾款节点的收款不可关闭')
         db.prepare('UPDATE artist_workflow_stages SET takes_payment = 0, basis_points = NULL WHERE id = ?')
           .run(stageId)
         if (final) {
@@ -180,14 +184,14 @@ export function updateStage(artistId, stageId, fields) {
 /** 删除节点（尾款拒绝；收款节点比例并入尾款） */
 export function deleteStage(artistId, stageId) {
   const stage = getStageById(stageId)
-  if (!stage || stage.artist_id !== artistId) throw new Error('节点不存在')
+  if (!stage || stage.artist_id !== artistId) throw bizErr('节点不存在')
 
   return db.transaction(() => {
     const stages = getStages(artistId)
-    if (stages.length <= 1) throw new Error('至少保留 1 个流程节点')
+    if (stages.length <= 1) throw bizErr('至少保留 1 个流程节点')
 
     const final = findFinal(stages)
-    if (final && final.id === stageId) throw new Error('尾款节点不可删除')
+    if (final && final.id === stageId) throw bizErr('尾款节点不可删除')
 
     // 收款节点：比例并入尾款
     if (stage.takes_payment && final) {
@@ -213,11 +217,11 @@ export function reorderStages(artistId, orderedIds) {
   return db.transaction(() => {
     const stages = getStages(artistId)
     const idSet = new Set(stages.map(s => s.id))
-    if (orderedIds.length !== stages.length) throw new Error('排序数组长度不匹配')
+    if (orderedIds.length !== stages.length) throw bizErr('排序数组长度不匹配')
     for (const id of orderedIds) {
-      if (!idSet.has(id)) throw new Error('排序数组包含无效节点')
+      if (!idSet.has(id)) throw bizErr('排序数组包含无效节点')
     }
-    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('排序数组有重复')
+    if (new Set(orderedIds).size !== orderedIds.length) throw bizErr('排序数组有重复')
 
     orderedIds.forEach((id, i) => {
       db.prepare('UPDATE artist_workflow_stages SET sort_order = ? WHERE id = ? AND artist_id = ?')
@@ -235,15 +239,15 @@ export function savePayment(artistId, nodes) {
   return db.transaction(() => {
     const stages = getStages(artistId)
     const final = findFinal(stages)
-    if (!final) throw new Error('无尾款节点')
+    if (!final) throw bizErr('无尾款节点')
 
     for (const n of nodes) {
       const stage = stages.find(s => s.id === n.id)
-      if (!stage) throw new Error('节点不存在')
-      if (stage.id === final.id) throw new Error('不能直接修改尾款比例')
-      if (!stage.takes_payment) throw new Error(`「${stage.name}」不是收款节点`)
-      if (n.basisPoints < MIN_BP) throw new Error(`「${stage.name}」的比例不能低于 5%`)
-      if (n.basisPoints > MAX_BP - MIN_BP) throw new Error(`「${stage.name}」的比例过高，尾款不能低于 5%`)
+      if (!stage) throw bizErr('节点不存在')
+      if (stage.id === final.id) throw bizErr('不能直接修改尾款比例')
+      if (!stage.takes_payment) throw bizErr(`「${stage.name}」不是收款节点`)
+      if (n.basisPoints < MIN_BP) throw bizErr(`「${stage.name}」的比例不能低于 5%`)
+      if (n.basisPoints > MAX_BP - MIN_BP) throw bizErr(`「${stage.name}」的比例过高，尾款不能低于 5%`)
     }
 
     for (const n of nodes) {
@@ -287,9 +291,25 @@ export function seedArtistStages(artistId) {
   }
 }
 
-/** 从 default_workflow_template 复制到画师（createArtist 调用） */
+/** 从默认模板复制到画师（createArtist 调用） */
 export function copyTemplateToArtist(artistId) {
   seedArtistStages(artistId)
+}
+
+/** 重置画师流程为默认模板（画师主动操作） */
+export function resetArtistStages(artistId) {
+  return db.transaction(() => {
+    db.prepare('DELETE FROM artist_workflow_stages WHERE artist_id = ?').run(artistId)
+    const tpl = getDefaultTemplate()
+    const insert = db.prepare(
+      'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    for (const t of tpl) {
+      insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points)
+    }
+    assertInvariants(artistId)
+    return listCamel(artistId)
+  })()
 }
 
 // ─── 管理员：默认模板 CRUD ───
@@ -309,14 +329,14 @@ export function updateDefaultTemplate(nodes) {
     nodes.forEach((n, i) => {
       const bp = n.takesPayment ? (n.basisPoints || 0) : null
       // P1-1: 收款节点必须满足最低比例
-      if (n.takesPayment && bp < MIN_BP) throw new Error(`收款节点「${n.name}」比例不能低于 ${MIN_BP / 100}%`)
+      if (n.takesPayment && bp < MIN_BP) throw bizErr(`收款节点「${n.name}」比例不能低于 ${MIN_BP / 100}%`)
       insert.run(n.name, n.description || null, i + 1, n.takesPayment ? 1 : 0, bp)
       if (n.takesPayment) { paySum += bp; payCount++ }
     })
     // 校验
-    if (payCount === 0) throw new Error('模板至少需要 1 个收款节点')
-    if (payCount > MAX_INSTALLMENTS) throw new Error(`最多 ${MAX_INSTALLMENTS} 期`)
-    if (paySum !== TOTAL_BP) throw new Error('收款比例总和必须等于 100%')
+    if (payCount === 0) throw bizErr('模板至少需要 1 个收款节点')
+    if (payCount > MAX_INSTALLMENTS) throw bizErr(`最多 ${MAX_INSTALLMENTS} 期`)
+    if (paySum !== TOTAL_BP) throw bizErr('收款比例总和必须等于 100%')
     return getDefaultTemplate()
   })()
 }
