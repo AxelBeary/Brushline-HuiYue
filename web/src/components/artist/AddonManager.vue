@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { artistApi } from '../../api/index.js'
 import { ElMessage } from 'element-plus'

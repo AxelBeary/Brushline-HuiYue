@@ -81,7 +81,7 @@ export function createAddon(artistId, { category, name, priceType, priceValue, s
  * 更新增项
  */
 export function updateAddon(artistId, addonId, fields) {
-  const addon = getAddon(artistId, addonId)
+  getAddon(artistId, addonId) // 存在性校验
 
   if (fields.name !== undefined) {
     if (!fields.name.trim()) throw new AppError(E.ADDON_NAME_EMPTY)
