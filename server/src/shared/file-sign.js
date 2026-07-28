@@ -8,7 +8,12 @@ import crypto from 'crypto'
 const FILE_TTL_MS = 15 * 60 * 1000 // 签名有效期 15 分钟
 
 function getSecret() {
-  return process.env.SESSION_SECRET || 'dev-secret-change-in-production'
+  const secret = process.env.SESSION_SECRET
+  // M-6 修复：生产环境必须显式设置密钥，否则 fail-fast（防止默认值上线）
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET 未设置 — 生产环境必须配置（长度 ≥ 32 字符）')
+  }
+  return secret || 'dev-secret-change-in-production'
 }
 
 /**
