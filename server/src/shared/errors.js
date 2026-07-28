@@ -112,7 +112,15 @@ export const E = {
 
   // 计算
   PRICING_TIER_REQUIRED: 'PRICING_TIER_REQUIRED',
-  PRICING_CALC_FAILED: 'PRICING_CALC_FAILED'
+  PRICING_CALC_FAILED: 'PRICING_CALC_FAILED',
+
+  // 价格（v0.11）
+  INVALID_PRICE: 'INVALID_PRICE',
+
+  // 焦点图（v0.11）
+  FOCUS_IMAGE_NOT_FOUND: 'FOCUS_IMAGE_NOT_FOUND',
+  FOCUS_IMAGE_NOT_OWNED: 'FOCUS_IMAGE_NOT_OWNED',
+  INVALID_FOCUS_MODE: 'INVALID_FOCUS_MODE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -211,5 +219,13 @@ export const ERROR_MESSAGES = {
 
   // 计算
   PRICING_TIER_REQUIRED: '请先选择基础档位',
-  PRICING_CALC_FAILED: '价格计算失败'
+  PRICING_CALC_FAILED: '价格计算失败',
+
+  // 价格（v0.11）
+  INVALID_PRICE: '价格无效（须为正整数，单位：分，上限 99999999）',
+
+  // 焦点图（v0.11）
+  FOCUS_IMAGE_NOT_FOUND: '参考图不存在',
+  FOCUS_IMAGE_NOT_OWNED: '该参考图不属于此订单',
+  INVALID_FOCUS_MODE: '无效的焦点图模式（可选：off/small/large）'
 }
