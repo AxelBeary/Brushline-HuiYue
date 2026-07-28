@@ -14,47 +14,47 @@
     <!-- 表单 -->
     <template v-else-if="artist">
       <div class="eo-header">
-        <h2>{{ $t('orderForm.title') }}</h2>
+        <h2>{{ t('orderForm.title') }}</h2>
         <p class="eo-artist">→ {{ artist.name }}</p>
       </div>
 
       <div class="eo-body">
         <!-- 档位选择 -->
         <div class="eo-field" v-if="tiers.length">
-          <label>{{ $t('orderForm.tierLabel') }}</label>
+          <label>{{ t('orderForm.tierLabel') }}</label>
           <div class="eo-tier-list">
             <div
-              v-for="t in tiers" :key="t.id"
+              v-for="tier in tiers" :key="tier.id"
               class="eo-tier-item"
-              :class="{ active: selectedTier === t.id }"
-              @click="selectedTier = t.id"
+              :class="{ active: selectedTier === tier.id }"
+              @click="selectedTier = tier.id"
             >
               <div class="eo-tier-top">
-                <span class="eo-tier-name">{{ t.name }}</span>
-                <span class="eo-tier-price">¥{{ t.price }}</span>
+                <span class="eo-tier-name">{{ tier.name }}</span>
+                <span class="eo-tier-price">¥{{ tier.price }}</span>
               </div>
-              <p class="eo-tier-desc" v-if="t.description">{{ t.description }}</p>
-              <p class="eo-tier-days" v-if="t.work_days">{{ $t('artistHome.aboutDays', { n: t.work_days }) }}</p>
+              <p class="eo-tier-desc" v-if="tier.description">{{ tier.description }}</p>
+              <p class="eo-tier-days" v-if="tier.work_days">{{ t('artistHome.aboutDays', { n: tier.work_days }) }}</p>
             </div>
           </div>
         </div>
 
         <!-- QQ -->
         <div class="eo-field">
-          <label>{{ $t('orderForm.qqLabel') }}</label>
-          <input v-model="form.qq" :placeholder="$t('orderForm.qqPlaceholder')" class="eo-input" maxlength="15" />
+          <label>{{ t('orderForm.qqLabel') }}</label>
+          <input v-model="form.qq" :placeholder="t('orderForm.qqPlaceholder')" class="eo-input" maxlength="15" />
         </div>
 
         <!-- 昵称 -->
         <div class="eo-field">
-          <label>{{ $t('orderForm.nameLabel') }}</label>
-          <input v-model="form.name" :placeholder="$t('orderForm.namePlaceholder')" class="eo-input" maxlength="30" />
+          <label>{{ t('orderForm.nameLabel') }}</label>
+          <input v-model="form.name" :placeholder="t('orderForm.namePlaceholder')" class="eo-input" maxlength="30" />
         </div>
 
         <!-- 需求描述 -->
         <div class="eo-field">
-          <label>{{ $t('orderForm.descLabel') }}</label>
-          <textarea v-model="form.desc" :placeholder="$t('orderForm.descPlaceholder')" class="eo-textarea" rows="4"></textarea>
+          <label>{{ t('orderForm.descLabel') }}</label>
+          <textarea v-model="form.desc" :placeholder="t('orderForm.descPlaceholder')" class="eo-textarea" rows="4"></textarea>
         </div>
 
         <!-- 错误提示 -->
@@ -62,15 +62,15 @@
 
         <!-- 提交 -->
         <button class="eo-submit" @click="submit" :disabled="submitting">
-          {{ submitting ? 'Submitting...' : $t('orderForm.submit') }}
+          {{ submitting ? 'Submitting...' : t('orderForm.submit') }}
         </button>
 
         <!-- 成功 -->
         <div v-if="submitted" class="eo-success">
           <p class="eo-success-icon">✅</p>
-          <p class="eo-success-text">{{ $t('orderForm.successTitle') }}</p>
+          <p class="eo-success-text">{{ t('orderForm.successTitle') }}</p>
           <div class="eo-order-no">{{ orderNo }}</div>
-          <p class="eo-success-hint">{{ $t('orderForm.addQqHint') }}</p>
+          <p class="eo-success-hint">{{ t('orderForm.addQqHint') }}</p>
         </div>
       </div>
     </template>
@@ -82,7 +82,7 @@
 // 字符串内联翻译，避免额外依赖
 const LANG = navigator.language?.startsWith('zh') ? 'zh' : 'en'
 
-function t(key) {
+function t(key, params) {
   const MSG = {
     'orderForm.title':              { zh: '我要约稿', en: 'Commission Me' },
     'orderForm.tierLabel':          { zh: '选择档位', en: 'Select Tier' },
@@ -97,14 +97,14 @@ function t(key) {
     'orderForm.addQqHint':          { zh: '请添加画师QQ沟通细节，报上你的订单号即可', en: 'Add the artist on QQ with your order number to discuss details' },
     'orderForm.selectTier':         { zh: '请选择档位', en: 'Please select a tier' },
     'orderForm.fillQq':             { zh: '请填写QQ号', en: 'Please enter your QQ number' },
-    'artistHome.aboutDays':         { zh: (n) => `约${n}天`, en: (n) => `~${n} days` },
+    'artistHome.aboutDays':         { zh: (p) => `约${p.n}天`, en: (p) => `~${p.n} days` },
     'artistHome.commission':        { zh: '约稿', en: 'Commission' },
     'artistHome.track':             { zh: '查询进度', en: 'Track Order' }
   }
   const msg = MSG[key]
   if (!msg) return key
   const val = msg[LANG] || msg.en
-  return typeof val === 'function' ? val : val
+  return typeof val === 'function' ? val(params) : val
 }
 
 export default {
@@ -114,6 +114,7 @@ export default {
       loading: true,
       error: '',
       artist: null,
+      subdomain: '',
       tiers: [],
       selectedTier: null,
       form: { qq: '', name: '', desc: '' },
@@ -127,10 +128,12 @@ export default {
     this.fetchArtist()
   },
   methods: {
+    t,
     async fetchArtist() {
       const params = new URLSearchParams(window.location.search)
       const subdomain = params.get('artist')
       if (!subdomain) { this.error = 'Missing artist parameter'; this.loading = false; return }
+      this.subdomain = subdomain
 
       try {
         const res = await fetch(`/api/artists/${encodeURIComponent(subdomain)}`)
@@ -155,12 +158,12 @@ export default {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            artistId: this.artist.id,
+            subdomain: this.subdomain,
             tierId: this.selectedTier,
             clientQq: this.form.qq.trim(),
-            clientName: this.form.name.trim() || undefined,
-            description: this.form.desc.trim() || undefined,
-            source: 'self'
+            clientName: this.form.name.trim() || null,
+            description: this.form.desc.trim() || null,
+            agreeRules: true
           })
         })
         if (!res.ok) {
@@ -168,7 +171,7 @@ export default {
           throw new Error(err.error || 'Submit failed')
         }
         const data = await res.json()
-        this.orderNo = data.order_no
+        this.orderNo = data.orderNo
         this.submitted = true
       } catch (err) {
         this.formError = err.message
