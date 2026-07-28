@@ -123,6 +123,9 @@ export default {
       orderNo: ''
     }
   },
+  mounted() {
+    this.fetchArtist()
+  },
   methods: {
     async fetchArtist() {
       const params = new URLSearchParams(window.location.search)
@@ -173,9 +176,6 @@ export default {
         this.submitting = false
       }
     }
-  },
-  mounted() {
-    this.fetchArtist()
   }
 }
 </script>

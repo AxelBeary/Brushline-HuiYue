@@ -80,6 +80,7 @@
     <section class="section" v-if="rules">
       <h2 class="section-title">{{ $t('artistHome.rules') }}</h2>
       <el-card shadow="never" class="rules-card">
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-html="sanitizedRules"></div>
       </el-card>
     </section>
@@ -96,7 +97,7 @@ import WorkflowOverviewStrip from '../../../components/shared/WorkflowOverviewSt
 import { ARTIST_STATUS_TYPE } from '../../../constants/order.js'
 
 const { t } = useI18n()
-const props = defineProps({
+defineProps({
   artist: Object, tiers: Array, artworks: Array, rules: String,
   workflowStages: Array, subdomain: String, sanitizedRules: String
 })

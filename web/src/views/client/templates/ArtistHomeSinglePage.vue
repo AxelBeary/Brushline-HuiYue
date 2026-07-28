@@ -8,8 +8,11 @@
         <a href="#pricing" @click.prevent="scrollTo('pricing')">Pricing</a>
         <a href="#workflow" @click.prevent="scrollTo('workflow')">Process</a>
         <a href="#gallery" @click.prevent="scrollTo('gallery')">Work</a>
-        <button class="sp-nav-cta" :disabled="artist.status !== 'open'"
-          @click="$router.push(`/artist/${subdomain}/order`)">
+        <button
+          class="sp-nav-cta"
+          :disabled="artist.status !== 'open'"
+          @click="$router.push(`/artist/${subdomain}/order`)"
+        >
           {{ $t('artistHome.commission') }}
         </button>
       </div>
@@ -25,8 +28,11 @@
           <h1>{{ artist.name }}</h1>
           <p class="sp-hero-bio">{{ artist.bio }}</p>
           <div class="sp-hero-actions">
-            <button class="sp-btn sp-btn-primary" :disabled="artist.status !== 'open'"
-              @click="$router.push(`/artist/${subdomain}/order`)">
+            <button
+              class="sp-btn sp-btn-primary"
+              :disabled="artist.status !== 'open'"
+              @click="$router.push(`/artist/${subdomain}/order`)"
+            >
               Start a Commission →
             </button>
             <button class="sp-btn" @click="$router.push(`/artist/${subdomain}/track`)">
@@ -93,6 +99,7 @@
     <section class="sp-section sp-section-alt" v-if="rules" id="rules">
       <div class="sp-section-inner">
         <h2 class="sp-section-title">{{ $t('artistHome.rules') }}</h2>
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div class="sp-rules" v-html="sanitizedRules"></div>
       </div>
     </section>
@@ -102,8 +109,11 @@
       <div class="sp-section-inner sp-cta-inner">
         <h2>{{ $t('artistHome.commission') }}</h2>
         <p>Ready to work together? Let's create something amazing.</p>
-        <button class="sp-btn sp-btn-primary sp-btn-lg" :disabled="artist.status !== 'open'"
-          @click="$router.push(`/artist/${subdomain}/order`)">
+        <button
+          class="sp-btn sp-btn-primary sp-btn-lg"
+          :disabled="artist.status !== 'open'"
+          @click="$router.push(`/artist/${subdomain}/order`)"
+        >
           {{ $t('artistHome.startCommission') }}
         </button>
         <div class="sp-cta-meta">
@@ -116,11 +126,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
 import ThemePicker from '../../../components/ThemePicker.vue'
 import Disclaimer from '../../../components/Disclaimer.vue'
 
-const props = defineProps({
+defineProps({
   artist: Object, tiers: Array, artworks: Array, rules: String,
   workflowStages: Array, subdomain: String, sanitizedRules: String
 })

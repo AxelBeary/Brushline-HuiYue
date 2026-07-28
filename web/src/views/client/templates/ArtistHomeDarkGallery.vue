@@ -10,8 +10,11 @@
           <span class="dg-status-text">{{ statusText(artist.status) }}</span>
         </div>
         <div class="dg-actions">
-          <button class="dg-btn dg-btn-primary" :disabled="artist.status !== 'open'"
-            @click="$router.push(`/artist/${subdomain}/order`)">
+          <button
+            class="dg-btn dg-btn-primary"
+            :disabled="artist.status !== 'open'"
+            @click="$router.push(`/artist/${subdomain}/order`)"
+          >
             {{ $t('artistHome.commission') }}
           </button>
           <button class="dg-btn" @click="$router.push(`/artist/${subdomain}/track`)">
@@ -74,6 +77,7 @@
     <section class="dg-section dg-section-alt" v-if="rules">
       <div class="dg-section-inner">
         <h2 class="dg-section-title">{{ $t('artistHome.rules') }}</h2>
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div class="dg-rules" v-html="sanitizedRules"></div>
       </div>
     </section>
@@ -89,9 +93,8 @@
 <script setup>
 import ThemePicker from '../../../components/ThemePicker.vue'
 import Disclaimer from '../../../components/Disclaimer.vue'
-import { ARTIST_STATUS_TYPE } from '../../../constants/order.js'
 
-const props = defineProps({
+defineProps({
   artist: Object, tiers: Array, artworks: Array, rules: String,
   workflowStages: Array, subdomain: String, sanitizedRules: String
 })
