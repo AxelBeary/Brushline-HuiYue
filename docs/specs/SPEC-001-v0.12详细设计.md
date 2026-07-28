@@ -4,11 +4,15 @@
 > **目标版本**：v0.12
 > **整理人**：四号（需求整理者）
 > **日期**：2026-07-29
-> **状态**：待一号审核
+> **状态**：定稿（已合并三号后端答复，2026-07-29），待一号审核
 > **需求来源**：REQ-003（R15 / R18 / R19）
-> **技术约束**：一号已拍板（见各章节标注）
+> **技术约束**：一号已拍板 + 三号后端答复（见各章节标注）
 
-> ⚠️ **预研笔记缺失说明**：一号提到"三号和二号的预研笔记已发给你"，但四号在 `docs/`、`temp/`、最近 24h 修改文件中**均未找到**二号/三号署名的预研文档（仅 `temp/审计预研判-呈一号-2026-07-29.md` 一份旧审计文件）。本设计基于：① 一号拍板的技术约束；② REQ-003 需求；③ 四号对实际代码的逐行核实（签名机制/上传链路/DB schema）。**若预研笔记后续找到，请一号告知路径，我核对后补充或修正本设计。** 不假装引用未读到的内容。
+> 📌 **预研笔记下落（已查明，Q12）**：三号确认预研笔记**未写成文件**，是口头汇报给一号的，在"三号→一号→四号"交接链里丢了。核心结论已体现在三号对 Q4/Q5/Q10/Q11 的答复中，本设计已据此定稿。无遗留分歧。
+
+> ⚠️ **四号自纠（基于代码核实）**：定稿时发现原设计两处与现状不符，已修正：
+> 1. R18 原写"新增 `POST /api/artist/orders/:id/references` 端点"——**该端点已存在**（order.routes.js:478-502，含 references/ 前缀校验）。R18 实为**扩展现有端点 + service 加 source 参数**，非新增。
+> 2. R19 原写备注图存 `notes/{orderId}/`——三号指出**上传时备注尚未创建、没有 orderId**，改为 `notes/{artistId}/`（与 deliverables/{artistId}/ 模式一致）。
 
 ---
 
@@ -73,11 +77,23 @@
 }
 ```
 
+> ✅ **三号 Q4 确认**：骨架可直接用。v11 在 init.js 的结构 = `MIGRATIONS` 数组末尾追加 `{version, name, up(database)}`，运行器（init.js:512-518）自动用 `database.transaction()` 包裹每个 up() + 写 schema_migrations。v12 照抄 v11 模式。
+> ⚠️ **三号 Q4 关键提醒**：SQLite 的 ALTER TABLE 是**隐式提交**的，WAL 模式下事务包裹 ALTER 时，若 ALTER 成功但后续 INSERT schema_migrations 失败，**ALTER 不会回滚**。所以 **PRAGMA 幂等检测才是真正的安全网**（v11 已这么做），事务主要保护 schema_migrations 记录一致性。骨架里的 PRAGMA 检查不可省。
+
+> ✅ **三号 Q5 已实测**（better-sqlite3 内存库，四号已复现验证）：
+> | 场景 | 读出值 |
+> |------|--------|
+> | 存量行（ALTER 前插入） | `'client'`（字符串，非 NULL） |
+> | 新插入行（不指定 source） | `'client'` |
+> | 显式 `INSERT ... source = NULL` | `null` |
+>
+> **结论**：R18 客户可见性逻辑**不需要兼容 NULL**——只要迁移用 DEFAULT 'client'，存量行读出来就是 'client'。但 service 层插入时**务必显式传值**（不要写 NULL），否则会是 null。
+
 ### 1.4 回滚方案
 
 - 迁移前已备份 `.bak.v12`，回滚 = 停服 → 恢复备份 → 降级代码
 - 三个新列均为**可空/有默认值**，旧代码读到它们不会报错（向后兼容）
-- `custom_links` 为 NULL 时前端回退读旧 `weibo_url`/`bilibili_url`（见 R15）
+- `custom_links` 为 NULL 时**后端**回退拼好旧 `weibo_url`/`bilibili_url` 返回（见 R15，前端无感知）
 
 ---
 
@@ -108,16 +124,17 @@
 - 数量上限：**6 条**（C26）
 - 后端校验：JSON 解析失败 / 超 6 条 / url 非法 → 拒绝
 
-### 2.3 读写逻辑
+### 2.3 读写逻辑（三号 Q11 已定）
 
 **写（画师设置页）**：
 - `PUT /api/artist/profile` 增加 `customLinks` 字段（数组），后端 `JSON.stringify` 存入
-- 校验：`Array.isArray` + 长度 ≤6 + 每项 url 合法
+- **格式校验放 routes 的 JSON Schema**（三号 Q11①，与现有所有写入路由一致：additionalProperties:false + 类型/长度/枚举约束）；service 层只做业务校验（数量 ≤6）
+- **旧列彻底冻结只读**（三号 Q11②）：从 `updateArtist` 的 allowed 白名单**移除** weibo_url/bilibili_url，迁移后不再接受写入。列保留不删（过渡期旧读取路径可能还有人用），新写入全走 custom_links
 
 **读（客户主页）**：
-- 公开主页接口返回 `customLinks`（已解析的数组）
-- **兼容逻辑**：若 `custom_links` 为 NULL（老画师未设置），前端回退展示旧的 `weibo_url`/`bilibili_url`（有值才显示）
-- 若 `custom_links` 已设置（哪怕空数组），以新列为准，**不再读旧列**
+- **后端拼好，前端无脑读**（三号 Q11③，四号建议被采纳）：`GET /api/artists/:subdomain` 在 service 层拼好 customLinks 数组——先读 custom_links，**为空则回退旧列**（weibo_url → `{icon:'weibo', url:...}`，bilibili_url → `{icon:'bilibili', url:...}`）
+- 前端只读 customLinks，不碰旧字段
+- 若 custom_links 已设置（哪怕空数组），以新列为准，后端不回退旧列
 
 ### 2.4 前端改动
 
@@ -149,22 +166,24 @@
 | `client` | 客户下单时上传（默认） | 客户 |
 | `artist` | 画师后续补充 | 画师 |
 
-### 3.3 上传链路（复用 references/）
+### 3.3 上传链路（复用 references/，三号 Q3 已定：方案 A）
 
-画师加图走**现有 `POST /api/upload/reference`** 链路：
+画师加图走**现有 `POST /api/upload/reference`** 链路（三号拍板方案 A）：
 - 文件存入 `references/` 目录（与客户参考图同目录，nanoid 命名不冲突）
 - 返回 `filePath` + 签名 URL
-- 然后调用订单接口把 `filePath` 关联到订单，**source 标记为 'artist'**
+- 然后调用订单关联接口把 `filePath` 关联到订单，**source 标记为 'artist'**
 
-> ⚠️ **安全注意**：`POST /api/upload/reference` 当前是**公开接口**（客户下单用，无 requireAuth）。画师加图复用此链路时，需确认：画师端调用也走这个公开接口是可以的（上传本身不敏感，敏感的是关联到订单——那一步有 requireAuth + requireOwnOrder）。**三号实施时需确认此判断，或为画师加图单独走 requireAuth 的上传端点。**
+> ✅ **方案 A 理由（三号）**：上传和关联是两步——上传时文件还没归属任何订单，鉴权没有锚点（不知道校验哪个订单的权限）。现有公开接口已有限流（10次/10分钟/IP），孤儿文件 24h 后被 gcUploads 回收。
+> **风险评估**：恶意刷孤儿文件最坏 = 每 IP 每 10 分钟 10 个 × 10MB = 100MB/10min/IP，24h 后自动回收，可接受。若一号觉得不够，可把公开上传限流从 10 次降到 5 次（一行改动）。
 
-### 3.4 关联接口改动
+### 3.4 关联接口改动（⚠️ 四号自纠：端点已存在，是扩展不是新增）
 
-**新增画师加图到订单**（或扩展 createOrder 的 references 逻辑）：
-- `POST /api/artist/orders/:id/references`（requireAuth + requireOwnOrder）
-- body: `{ filePath }`
-- 后端：校验 filePath 前缀为 `references/`（防路径穿越，复用现有校验）→ 插入 order_references，`source='artist'`
-- 数量上限：客户图 + 画师图合计 ≤ **20 张/订单**（C29）
+**`POST /api/artist/orders/:id/references` 已存在**（order.routes.js:478-502，requireAuth + requireOwnOrder，含 references/ 前缀校验，调 `orderService.addReference`）。R18 只需**扩展**：
+
+- **service 层**：`addReference(orderId, filePath, fileName, fileSize)` 增加 `source` 参数（order.service.js:423），INSERT 时显式写入 `source`（**务必显式传值，不要依赖 DEFAULT**——三号 Q5 实测：显式传 NULL 会写成 null）
+- **画师加图调用处**：现有路由调 `addReference` 时传 `source='artist'`
+- **createOrder 调用处**：客户自助下单的参考图传 `source='client'`（order.service.js:132-134 的循环）
+- **20 张总量校验（三号 Q7）**：在 addReference service 函数里加 `SELECT COUNT(*) FROM order_references WHERE order_id = ?`，≥20 拒绝。自助下单的 `.slice(0,5)` 保持不变（单次上传限制），20 张是订单生命周期总量限制，两者不冲突
 
 **删除参考图**：现有 `DELETE /api/artist/orders/:id/references/:refId` 已支持（UI-1 已修），画师可删任意来源的图。
 
@@ -178,11 +197,13 @@
 - references 返回时**带上 `source` 字段**，前端据此渲染"客户"/"画师"角标
 - 焦点图 `focusImageUrl` 已在队列/列表端点签名（order.routes.js:266/282），不变
 
-### 3.6 客户可见性（C30）
+### 3.6 客户可见性（C30，三号 Q8 已定：service 层过滤）
 
 - **客户查询页只显示 source='client' 的图**（画师图不泄露给客户）
-- track 接口（客户用）查询 references 时加 `WHERE source='client'`
-- 画师端 getOrder 返回全部（含 source）
+- **实现方式（三号）**：service 层 `getOrder(id, { clientOnly: true })` 加参数，内部对 references 过滤 `source === 'client'`。routes 层不管过滤逻辑
+  - 画师端 `GET /api/artist/orders/:id` 调 `getOrder(id)`（不传 clientOnly）→ 看全部
+  - 客户 track 接口调 `getOrder(id, { clientOnly: true })` → 只看客户图
+- ⚠️ 不要在 getOrder() 里无条件加 WHERE source='client'——会连画师端也过滤掉
 
 ### 3.7 前端改动
 
@@ -207,27 +228,27 @@
 ### 4.1 技术约束（一号已拍板）
 
 - **单图**（一条备注最多 1 张，C32）
-- 新目录 **`notes/{orderId}/`**
+- 新目录 **`notes/{artistId}/`**（⚠️ 四号自纠：原写 `{orderId}`，三号 Q9 指出上传时备注尚未创建、无 orderId 可用，改为 artistId，与 deliverables/{artistId}/ 模式一致）
 - **必须走签名 URL**（notes/ 不在公开目录）
 
 ### 4.2 数据模型
 
 `order_notes` 表新增 `image_path TEXT`（可空）：
 - 纯文字备注：`image_path = NULL`
-- 带图备注：`image_path = 'notes/{orderId}/{nanoid}.ext'`
+- 带图备注：`image_path = 'notes/{artistId}/{nanoid}.ext'`
 
-### 4.3 上传链路（新目录 notes/）
+### 4.3 上传链路（新目录 notes/，三号 Q9 已定）
 
-**新增上传端点**或复用 saveUpload 逻辑：
-- 文件存入 `notes/{orderId}/` 目录
-- 需 requireAuth + requireOwnOrder（备注是画师私有）
+**复用 `saveUpload()`（upload.routes.js:64），新建端点 `POST /api/upload/note-image`**：
+- `subDir = join('notes', String(request.artist.id))`（用 artistId 分目录）
+- 需 requireAuth（备注是画师私有）
 - 白名单：图片格式（同 references，JPG/PNG/WebP/GIF，10MB）
 
-> ⚠️ **签名关键**：`notes/` 目录**必须不在 `isPublicUploadPath` 白名单内**（当前白名单只有 `/uploads/images/`，notes/ 默认需签名，符合预期）。三号实施时**不要**把 notes/ 加进公开目录。
+> ⚠️ **签名关键（三号 Q2 确认）**：`notes/` 目录**不在 `isPublicUploadPath` 白名单内**（当前白名单只有 `/uploads/images/`，notes/ 默认需签名，符合预期）。R19 实施**不会**把 notes/ 加进公开目录。
 
-### 4.4 读取与签名（关键 — 防焦点图 Bug 翻版）
+### 4.4 读取与签名（关键 — 防焦点图 Bug 翻版，三号 Q1 已确认）
 
-`getOrder` 返回 notes 时，**必须为每条带图备注签名**：
+三号全局搜索确认：**notes 从未在任何地方被签名**，不存在"已在别处签名"的情况。R19 必须把 notes 加进 `signOrderUrls()`（三号将统一所有返回 order 的路由——GET orders/:id、PUT focus-image、POST notes、PUT price——走这个函数）：
 
 ```js
 // order.routes.js — signOrderUrls 扩展
@@ -248,11 +269,11 @@ function signOrderUrls(order) {
 }
 ```
 
-> 这是本设计**最容易遗漏的点**：notes 当前在 signOrderUrls 里**没有被签名**。若只加 image_path 列忘了在这里签名，前端拿裸路径 → 403，就是焦点图 Bug 的翻版。**三号实施时务必把 notes 加进 signOrderUrls。**
+> 这是本设计**最容易遗漏的点**：notes 当前在 signOrderUrls 里**没有被签名**。若只加 image_path 列忘了在这里签名，前端拿裸路径 → 403，就是焦点图 Bug 的翻版。三号已确认会补。
 
 ### 4.5 接口改动
 
-- `POST /api/artist/orders/:id/notes`：body 增加可选 `imagePath`，校验前缀 `notes/{orderId}/`
+- `POST /api/artist/orders/:id/notes`：body 增加可选 `imagePath`，校验前缀 `notes/{artistId}/`（⚠️ 用 artistId，与 4.3 一致）
 - 返回的 note 带签名 imageUrl
 
 ### 4.6 前端改动
@@ -261,11 +282,36 @@ function signOrderUrls(order) {
 - 备注流：带图备注显示缩略图，点击看大图
 - 附图可选，纯文字照常
 
-### 4.7 验收要点
+### 4.7 GC 硬性前置条件（🔴 三号 Q10 揪出的数据丢失风险）
+
+> ⚠️ **这是 R19 的硬性前置条件，不是建议。漏做 = 数据丢失。**
+
+现有 `gcUploads`（app.js:47-99）收集 5 张表的引用作为"在用文件"白名单：
+```js
+collect(db.prepare('SELECT image_path FROM artworks').all(), 'image_path')
+collect(db.prepare('SELECT example_image FROM price_tiers').all(), 'example_image')
+collect(db.prepare('SELECT file_path FROM order_references').all(), 'file_path')
+collect(db.prepare('SELECT file_path FROM deliverables').all(), 'file_path')
+collect(db.prepare('SELECT avatar FROM artists').all(), 'avatar')
+```
+GC 逻辑（app.js:74-80）：遍历 uploads/ 下所有文件，**不在白名单且超过 24h 的一律删除**。
+
+**风险**：`order_notes` 当前没有 image_path 列，GC 不知道要收集它。R19 加完列后，如果**不同步在 GC 加一行收集**，正在使用的备注附图会被 GC 当成孤儿删掉——**这是数据丢失，不是磁盘膨胀**。
+
+**必须同步修改**（R19 实施时一并提交，不可拆分）：
+```js
+// app.js gcUploads 的 collect 列表追加
+collect(db.prepare('SELECT image_path FROM order_notes').all(), 'image_path')
+```
+
+**验收硬指标**：带图备注创建 24h 后，触发 GC，备注附图**仍然存在且可访问**。
+
+### 4.8 验收要点
 
 - 带图备注的 imageUrl 是签名 URL，能正常显示（不 403）
 - 一条备注超过 1 张图被拒绝
-- 非本订单画师无法访问备注图（requireOwnOrder + 签名双重防护）
+- 非本订单画师无法访问备注图（requireAuth + 签名双重防护）
+- **（硬指标）带图备注 24h 后不被 GC 误删**
 
 ---
 
@@ -278,7 +324,7 @@ function signOrderUrls(order) {
 | `images/{artistId}/` | 作品集/头像/档位例图 | ✅ 公开 | 无需签名（isPublicUploadPath 白名单） | — |
 | `references/` | 客户参考图 + 画师加图 | ❌ 需签名 | `signOrderUrls()` 统一签 | R18（画师加图复用） |
 | `deliverables/{artistId}/` | 交付文件 | ❌ 需签名 | `signOrderUrls()` + track 接口单独签 | — |
-| `notes/{orderId}/` | 备注附图（**v0.12 新增**） | ❌ 需签名 | **必须在 signOrderUrls 新增 notes 签名** | R19 |
+| `notes/{artistId}/` | 备注附图（**v0.12 新增**） | ❌ 需签名 | **必须在 signOrderUrls 新增 notes 签名** + **GC 必须收集 order_notes.image_path** | R19 |
 | 焦点图（指向 references/ 内文件） | 订单焦点图 | ❌ 需签名 | 队列/列表端点 `focusImageUrl` 已签（9ddba18 修复） | R18 复用 |
 
 ### 5.1 签名检查清单（三号实施时逐项核对）
@@ -287,7 +333,8 @@ function signOrderUrls(order) {
 - [ ] R18 焦点图：指向 references/ → focusImageUrl 已签，✅ 不变
 - [ ] R19 备注图：存入 notes/ → **必须手动在 signOrderUrls 加 notes 签名**，⚠️ 易遗漏
 - [ ] R19 notes/ 目录：**不得**加入 isPublicUploadPath 白名单
-- [ ] 客户 track 接口：references 只返回 source='client'，且已签名
+- [ ] **R19 GC：gcUploads 必须 collect order_notes.image_path**，🔴 漏做=数据丢失（三号 Q10）
+- [ ] 客户 track 接口：references 只返回 source='client'，且已签名（getOrder clientOnly 参数）
 
 ### 5.2 历史教训（焦点图 Bug 始末）
 
@@ -315,15 +362,19 @@ function signOrderUrls(order) {
 | 迁移 v12 幂等性 | 单元 | 跑两次不报错，列只加一次 |
 | 迁移 v12 事务回滚 | 单元 | 中途失败整体回滚 |
 | custom_links JSON 校验 | 单元 | 非法 JSON/超 6 条/非法 url 拒绝 |
-| custom_links 老数据回退 | 集成 | NULL 时读旧列 |
-| order_references.source 默认值 | 单元 | 存量图 source='client' |
-| 画师加图 source='artist' | 集成 | 客户 track 不可见 |
-| 参考图合计 ≤20 张 | 单元 | 超限拒绝 |
+| custom_links 老数据回退 | 集成 | NULL 时后端拼好旧列返回 |
+| custom_links 旧列冻结 | 单元 | updateArtist 不再接受 weibo_url/bilibili_url 写入 |
+| order_references.source 默认值 | 单元 | 存量图 source='client'（三号 Q5 已实测） |
+| addReference 显式传 source | 单元 | 画师图 'artist'，客户图 'client'，不写 NULL |
+| 画师加图 source='artist' | 集成 | 客户 track（clientOnly）不可见 |
+| getOrder clientOnly 过滤 | 单元 | 画师端看全部，客户端只看 client |
+| 参考图合计 ≤20 张 | 单元 | addReference 超限拒绝 |
 | 备注附图签名 | 集成 | imageUrl 可访问不 403 |
 | 备注单图限制 | 单元 | 超 1 张拒绝 |
 | notes/ 非公开 | 安全 | 无签名访问 notes/ 返回 403 |
+| **GC 不误删备注附图** | 集成 | 🔴 带图备注 24h 后触发 GC，图仍存在 |
 
-预计新增测试 ~12-15 个，总数 118 → ~132。
+预计新增测试 ~14-16 个，总数 118 → ~133。
 
 ---
 
@@ -343,11 +394,12 @@ R15 / R18 / R19 后端接口互不依赖，可并行；前端都改 OrderDetail/
 
 ---
 
-## 九、风险与待确认
+## 九、风险与待确认（三号答复后更新）
 
-| # | 风险/待确认 | 说明 |
-|---|-------------|------|
-| 1 | **预研笔记缺失** | 二号/三号预研笔记未找到，本设计基于代码核实。若笔记有不同结论，需核对 |
-| 2 | R18 画师加图走公开上传接口 | `POST /api/upload/reference` 无 requireAuth，需三号确认是否可接受或单独加鉴权端点 |
-| 3 | notes/ 目录 GC | 现有 gcUploads 是否清理 notes/ 孤儿文件？需三号确认 GC 覆盖新目录 |
-| 4 | 签名 15 分钟过期 | 备注图/参考图签名 15min 失效，长时间停留页面图片会 403。现有问题，非 v0.12 引入，但图库图多了之后更明显。建议后续考虑刷新机制 |
+| # | 风险/待确认 | 状态 | 说明 |
+|---|-------------|:----:|------|
+| 1 | 预研笔记缺失 | ✅ 已解决 | 三号 Q12：笔记是口头汇报给一号的，交接链里丢了。核心结论已体现在 Q4/Q5/Q10/Q11 答复中，无遗留分歧 |
+| 2 | R18 画师加图走公开上传接口 | ✅ 已定方案 A | 三号 Q3：上传无锚点鉴权，公开接口+限流+24h GC 可接受。若一号觉得不够，公开上传限流 10→5 次（一行改动） |
+| 3 | notes/ 目录 GC | 🔴 升级为硬性前置条件 | 三号 Q10：不是"是否清理孤儿"，而是"不 collect order_notes.image_path → 在用备注附图被误删 = 数据丢失"。已写入 4.7 节，R19 实施必须同步改 gcUploads |
+| 4 | 签名 15 分钟过期 | 🟡 遗留（非 v0.12 范围） | 备注图/参考图签名 15min 失效，长停留页面图片会 403。现有问题，图库图多后更明显。建议 v0.13 考虑签名刷新机制 |
+| 5 | ALTER TABLE 隐式提交 | ⚠️ 已知限制 | 三号 Q4：WAL 下事务包 ALTER，ALTER 成功但 schema_migrations 写入失败时 ALTER 不回滚。PRAGMA 幂等检测是真正安全网，骨架已包含 |
