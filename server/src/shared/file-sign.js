@@ -60,5 +60,14 @@ export function signedUrl(filePath) {
  * 判断路径是否为公开目录（无需签名）
  */
 export function isPublicUploadPath(urlPath) {
-  return urlPath.startsWith('/uploads/images/')
+  // C-1 修复：先解码再判断，防止 %2E%2E 等编码绕过前缀匹配
+  let decoded
+  try {
+    decoded = decodeURIComponent(urlPath)
+  } catch {
+    return false // 解码失败 → 视为非公开，走签名校验
+  }
+  // 安全：解码后含 .. 一律拒绝（路径穿越）
+  if (decoded.includes('..')) return false
+  return decoded.startsWith('/uploads/images/')
 }
