@@ -120,7 +120,17 @@ export const E = {
   // 焦点图（v0.11）
   FOCUS_IMAGE_NOT_FOUND: 'FOCUS_IMAGE_NOT_FOUND',
   FOCUS_IMAGE_NOT_OWNED: 'FOCUS_IMAGE_NOT_OWNED',
-  INVALID_FOCUS_MODE: 'INVALID_FOCUS_MODE'
+  INVALID_FOCUS_MODE: 'INVALID_FOCUS_MODE',
+
+  // 外链（v0.12 R15）
+  LINKS_TOO_MANY: 'LINKS_TOO_MANY',
+  LINK_URL_INVALID: 'LINK_URL_INVALID',
+
+  // 图库（v0.12 R18）
+  REFERENCES_LIMIT: 'REFERENCES_LIMIT',
+
+  // 备注附图（v0.12 R19）
+  NOTE_IMAGE_PATH_INVALID: 'NOTE_IMAGE_PATH_INVALID'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -227,5 +237,15 @@ export const ERROR_MESSAGES = {
   // 焦点图（v0.11）
   FOCUS_IMAGE_NOT_FOUND: '参考图不存在',
   FOCUS_IMAGE_NOT_OWNED: '该参考图不属于此订单',
-  INVALID_FOCUS_MODE: '无效的焦点图模式（可选：off/small/large）'
+  INVALID_FOCUS_MODE: '无效的焦点图模式（可选：off/small/large）',
+
+  // 外链（v0.12 R15）
+  LINKS_TOO_MANY: '外链数量不能超过6条',
+  LINK_URL_INVALID: '外链地址格式不正确（须以 http:// 或 https:// 开头）',
+
+  // 图库（v0.12 R18）
+  REFERENCES_LIMIT: '参考图总数不能超过20张',
+
+  // 备注附图（v0.12 R19）
+  NOTE_IMAGE_PATH_INVALID: '备注附图路径不合法'
 }
