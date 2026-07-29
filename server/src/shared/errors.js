@@ -134,7 +134,17 @@ export const E = {
 
   // 流程跟踪（v0.14）
   TRACK_ALREADY_ON: 'TRACK_ALREADY_ON',
-  NO_WORKFLOW_TEMPLATE: 'NO_WORKFLOW_TEMPLATE'
+  NO_WORKFLOW_TEMPLATE: 'NO_WORKFLOW_TEMPLATE',
+
+  // 备注删除（v0.15 R46）
+  NOTE_NOT_FOUND: 'NOTE_NOT_FOUND',
+  SYSTEM_NOTE_PROTECTED: 'SYSTEM_NOTE_PROTECTED',
+
+  // 强调色（v0.15 R49）
+  INVALID_ACCENT_COLOR: 'INVALID_ACCENT_COLOR',
+
+  // 截稿日（v0.15 R51）
+  INVALID_DEADLINE: 'INVALID_DEADLINE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -255,5 +265,15 @@ export const ERROR_MESSAGES = {
 
   // 流程跟踪（v0.14）
   TRACK_ALREADY_ON: '该订单已启用流程跟踪',
-  NO_WORKFLOW_TEMPLATE: '请先创建工作流模板（至少 1 个节点）'
+  NO_WORKFLOW_TEMPLATE: '请先创建工作流模板（至少 1 个节点）',
+
+  // 备注删除（v0.15 R46）
+  NOTE_NOT_FOUND: '备注不存在',
+  SYSTEM_NOTE_PROTECTED: '系统备注不可删除',
+
+  // 强调色（v0.15 R49）
+  INVALID_ACCENT_COLOR: '无效的强调色（仅允许预设色值）',
+
+  // 截稿日（v0.15 R51）
+  INVALID_DEADLINE: '截稿日格式无效（须为 ISO 8601）'
 }
