@@ -130,7 +130,11 @@ export const E = {
   REFERENCES_LIMIT: 'REFERENCES_LIMIT',
 
   // 备注附图（v0.12 R19）
-  NOTE_IMAGE_PATH_INVALID: 'NOTE_IMAGE_PATH_INVALID'
+  NOTE_IMAGE_PATH_INVALID: 'NOTE_IMAGE_PATH_INVALID',
+
+  // 流程跟踪（v0.14）
+  TRACK_ALREADY_ON: 'TRACK_ALREADY_ON',
+  NO_WORKFLOW_TEMPLATE: 'NO_WORKFLOW_TEMPLATE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -247,5 +251,9 @@ export const ERROR_MESSAGES = {
   REFERENCES_LIMIT: '参考图总数不能超过20张',
 
   // 备注附图（v0.12 R19）
-  NOTE_IMAGE_PATH_INVALID: '备注附图路径不合法'
+  NOTE_IMAGE_PATH_INVALID: '备注附图路径不合法',
+
+  // 流程跟踪（v0.14）
+  TRACK_ALREADY_ON: '该订单已启用流程跟踪',
+  NO_WORKFLOW_TEMPLATE: '请先创建工作流模板（至少 1 个节点）'
 }
