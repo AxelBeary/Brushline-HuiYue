@@ -191,7 +191,7 @@ function syncAddonTiers(artistId, addonId, tierIds) {
 
 export function getMultipliers(artistId) {
   return db.prepare(
-    'SELECT * FROM price_multipliers WHERE artist_id = ? ORDER BY type ASC, sort_order ASC'
+    'SELECT * FROM price_multipliers WHERE artist_id = ? ORDER BY type ASC, multiplier DESC'
   ).all(artistId)
 }
 
@@ -282,7 +282,7 @@ export function getPublicPricing(artistId) {
   }))
 
   const multipliers = db.prepare(
-    'SELECT * FROM price_multipliers WHERE artist_id = ? AND enabled = 1 ORDER BY type ASC, sort_order ASC'
+    'SELECT * FROM price_multipliers WHERE artist_id = ? AND enabled = 1 ORDER BY type ASC, multiplier DESC'
   ).all(artistId)
 
   const stages = db.prepare(
