@@ -260,9 +260,10 @@ export function getPublicPricing(artistId) {
     'SELECT * FROM price_addons WHERE artist_id = ? AND enabled = 1 ORDER BY sort_order ASC'
   ).all(artistId)
 
+  // P2-B 修复：加 WHERE 过滤，避免全表扫描 + 跨画师数据混入
   const tierLinks = db.prepare(
-    'SELECT addon_id, tier_id FROM addon_tiers'
-  ).all()
+    'SELECT addon_id, tier_id FROM addon_tiers WHERE addon_id IN (SELECT id FROM price_addons WHERE artist_id = ?)'
+  ).all(artistId)
 
   // 构建 tierId → addonIds 映射
   const tierAddonMap = {}
