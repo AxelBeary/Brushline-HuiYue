@@ -50,6 +50,12 @@ const items = ref([])
 
 const statusType = (s) => ORDER_STATUS_TYPE[s] || 'info'
 
+/** 后端返回中文标签（'逾期'等），映射为 i18n 键后缀；英文键直接透传 */
+const TAG_KEY_MAP = { '逾期': 'overdue', '截稿': 'dueToday', '新单': 'pending', '修改': 'revision', '进行中': 'inProgress' }
+function tagKey(tag) {
+  return TAG_KEY_MAP[tag] || tag || 'inProgress'
+}
+
 /** 标签类型映射（逾期/截稿 红色系，新单 主色，修改 警告，进行中 信息） */
 function tagType(tag) {
   const map = { overdue: 'danger', dueToday: 'danger', pending: 'primary', revision: 'warning', inProgress: 'info' }
@@ -69,7 +75,7 @@ function normalize(raw) {
     client_name: o.client_name ?? o.clientName ?? '',
     status: o.status ?? '',
     deadline: o.deadline ?? null,
-    tag: o.tag ?? o.label ?? guessTag(o)
+    tag: tagKey(o.tag ?? o.label ?? guessTag(o))
   }))
 }
 
