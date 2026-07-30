@@ -148,7 +148,14 @@ export const E = {
   INVALID_DEADLINE: 'INVALID_DEADLINE',
 
   // 下单页模板（v0.16 R58-7）
-  INVALID_ORDER_TEMPLATE: 'INVALID_ORDER_TEMPLATE'
+  INVALID_ORDER_TEMPLATE: 'INVALID_ORDER_TEMPLATE',
+
+  // 平台链接（v0.17 R58-8）
+  PLATFORM_URLS_TOO_MANY: 'PLATFORM_URLS_TOO_MANY',
+  PLATFORM_URL_INVALID: 'PLATFORM_URL_INVALID',
+
+  // 灵感标签（v0.17）
+  TAGS_TOO_MANY: 'TAGS_TOO_MANY'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -283,5 +290,12 @@ export const ERROR_MESSAGES = {
   INVALID_DEADLINE: '截稿日格式无效（须为 ISO 8601）',
 
   // 下单页模板（v0.16 R58-7）
-  INVALID_ORDER_TEMPLATE: '无效的下单页模板'
+  INVALID_ORDER_TEMPLATE: '无效的下单页模板',
+
+  // 平台链接（v0.17 R58-8）
+  PLATFORM_URLS_TOO_MANY: '平台链接数量不能超过10条',
+  PLATFORM_URL_INVALID: '平台链接格式不正确（须以 http:// 或 https:// 开头）',
+
+  // 灵感标签（v0.17）
+  TAGS_TOO_MANY: '灵感标签数量不能超过20个'
 }
