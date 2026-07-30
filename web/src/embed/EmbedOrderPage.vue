@@ -1,5 +1,8 @@
 <template>
   <div class="embed-order">
+    <!-- ⚠️ 已废弃（v0.18）：嵌入功能改为跳转模式，embed.js 点击直接跳转画师公开主页。
+         本组件及 embed.html / src/embed/main.js 不再被 embed.js 引用，
+         待 vite.config.js 移除 embed 入口后整体删除（需一号协调）。 -->
     <!-- 加载中 -->
     <div v-if="loading" class="state-loading">
       <div class="spinner"></div>
