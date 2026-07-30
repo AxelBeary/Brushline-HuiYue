@@ -44,17 +44,12 @@ import { ref, onMounted } from 'vue'
 import { artistApi } from '../../../api/index.js'
 import { ORDER_STATUS_TYPE } from '../../../constants/order.js'
 import { formatDateTime } from '../../../utils/datetime.js'
+import { normalizeTodo } from '../../../utils/dashboard-normalize.js'
 
 const state = ref('loading') // loading | ok | error
 const items = ref([])
 
 const statusType = (s) => ORDER_STATUS_TYPE[s] || 'info'
-
-/** 后端返回中文标签（'逾期'等），映射为 i18n 键后缀；英文键直接透传 */
-const TAG_KEY_MAP = { '逾期': 'overdue', '截稿': 'dueToday', '新单': 'pending', '修改': 'revision', '进行中': 'inProgress' }
-function tagKey(tag) {
-  return TAG_KEY_MAP[tag] || tag || 'inProgress'
-}
 
 /** 标签类型映射（逾期/截稿 红色系，新单 主色，修改 警告，进行中 信息） */
 function tagType(tag) {
@@ -66,41 +61,11 @@ function formatDate(str) {
   return formatDateTime(str)
 }
 
-/** 归一化后端返回（标签字段名按验收标准推断，兼容多种命名） */
-function normalize(raw) {
-  const list = raw?.items || raw?.todos || raw || []
-  items.value = (Array.isArray(list) ? list : []).map(o => ({
-    id: o.id,
-    order_no: o.order_no ?? o.orderNo ?? '',
-    client_name: o.client_name ?? o.clientName ?? '',
-    status: o.status ?? '',
-    deadline: o.deadline ?? null,
-    tag: tagKey(o.tag ?? o.label ?? guessTag(o))
-  }))
-}
-
-/** 兜底：后端未返回 tag 时前端按状态推断（向后兼容） */
-function guessTag(o) {
-  if (o.status === 'pending') return 'pending'
-  if (o.status === 'revision') return 'revision'
-  if (o.deadline) {
-    const d = new Date(o.deadline)
-    const now = new Date()
-    const dayDiff = Math.round(
-      (new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-        - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000
-    )
-    if (dayDiff < 0) return 'overdue'
-    if (dayDiff === 0) return 'dueToday'
-  }
-  return 'inProgress'
-}
-
 async function load() {
   state.value = 'loading'
   try {
     const res = await artistApi.getDashboardTodo()
-    normalize(res)
+    items.value = normalizeTodo(res)
     state.value = 'ok'
   } catch {
     state.value = 'error'
