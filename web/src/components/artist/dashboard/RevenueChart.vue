@@ -60,6 +60,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artistApi } from '../../../api/index.js'
+import { normalizeRevenue } from '../../../utils/dashboard-normalize.js'
 
 const { locale } = useI18n()
 
@@ -79,41 +80,13 @@ function barHeight(cents) {
   return `${Math.round(((cents || 0) / max) * 100)}%`
 }
 
-/** 归一化后端返回（已对齐三号 dashboard.service.js 实际字段） */
-function normalize(raw) {
-  const list = raw?.bars || raw?.data || raw?.buckets || []
-  bars.value = list.map(b => ({
-    label: b.label ?? b.name ?? b.key ?? '',
-    cents: b.cents ?? b.amountCents ?? b.amount ?? b.totalCents ?? 0
-  }))
-  const s = raw?.summary || {}
-  summary.value = {
-    totalCents: s.totalCents ?? raw?.totalCents ?? raw?.total ?? 0,
-    orderCount: s.completedCount ?? s.orderCount ?? raw?.orderCount ?? raw?.completedCount ?? null,
-    changePct: s.changePercent ?? s.changePct ?? raw?.changePct ?? raw?.momChange ?? null,
-    prevLabel: raw?.prevLabel ?? prevPeriodLabel()
-  }
-}
-
-/** 环比标签：后端未返回 prevLabel，前端按维度计算上一周期名称 */
-function prevPeriodLabel() {
-  const now = new Date()
-  if (period.value === 'month') {
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    return prev.toLocaleDateString(locale.value === 'zh-CN' ? 'zh-CN' : 'en-US', { month: 'long' })
-  }
-  if (period.value === 'quarter') {
-    const q = Math.floor(now.getMonth() / 3)
-    return q === 0 ? `Q4 ${now.getFullYear() - 1}` : `Q${q}`
-  }
-  return String(now.getFullYear() - 1)
-}
-
 async function load() {
   state.value = 'loading'
   try {
     const res = await artistApi.getDashboardRevenue(period.value)
-    normalize(res)
+    const norm = normalizeRevenue(res, period.value, locale.value)
+    bars.value = norm.bars
+    summary.value = norm.summary
     state.value = 'ok'
   } catch {
     state.value = 'error'
