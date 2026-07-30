@@ -128,6 +128,7 @@ export const E = {
 
   // 图库（v0.12 R18）
   REFERENCES_LIMIT: 'REFERENCES_LIMIT',
+  REFERENCE_DUPLICATE: 'REFERENCE_DUPLICATE',
 
   // 备注附图（v0.12 R19）
   NOTE_IMAGE_PATH_INVALID: 'NOTE_IMAGE_PATH_INVALID',
@@ -262,6 +263,7 @@ export const ERROR_MESSAGES = {
 
   // 图库（v0.12 R18）
   REFERENCES_LIMIT: '参考图总数不能超过20张',
+  REFERENCE_DUPLICATE: '该图片已在图库中',
 
   // 备注附图（v0.12 R19）
   NOTE_IMAGE_PATH_INVALID: '备注附图路径不合法',
