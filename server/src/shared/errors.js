@@ -155,7 +155,11 @@ export const E = {
   PLATFORM_URL_INVALID: 'PLATFORM_URL_INVALID',
 
   // 灵感标签（v0.17）
-  TAGS_TOO_MANY: 'TAGS_TOO_MANY'
+  TAGS_TOO_MANY: 'TAGS_TOO_MANY',
+
+  // 附加工作项（v0.17 SPEC-003）
+  EXTRA_ITEM_LIMIT: 'EXTRA_ITEM_LIMIT',
+  ORDER_FINAL_STATE: 'ORDER_FINAL_STATE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -297,5 +301,9 @@ export const ERROR_MESSAGES = {
   PLATFORM_URL_INVALID: '平台链接格式不正确（须以 http:// 或 https:// 开头）',
 
   // 灵感标签（v0.17）
-  TAGS_TOO_MANY: '灵感标签数量不能超过20个'
+  TAGS_TOO_MANY: '灵感标签数量不能超过20个',
+
+  // 附加工作项（v0.17 SPEC-003）
+  EXTRA_ITEM_LIMIT: '附加工作项数量不能超过20条',
+  ORDER_FINAL_STATE: '已交付或已取消的订单不能添加附加项'
 }
