@@ -144,7 +144,10 @@ export const E = {
   INVALID_ACCENT_COLOR: 'INVALID_ACCENT_COLOR',
 
   // 截稿日（v0.15 R51）
-  INVALID_DEADLINE: 'INVALID_DEADLINE'
+  INVALID_DEADLINE: 'INVALID_DEADLINE',
+
+  // 下单页模板（v0.16 R58-7）
+  INVALID_ORDER_TEMPLATE: 'INVALID_ORDER_TEMPLATE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -275,5 +278,8 @@ export const ERROR_MESSAGES = {
   INVALID_ACCENT_COLOR: '无效的强调色（仅允许预设色值）',
 
   // 截稿日（v0.15 R51）
-  INVALID_DEADLINE: '截稿日格式无效（须为 ISO 8601）'
+  INVALID_DEADLINE: '截稿日格式无效（须为 ISO 8601）',
+
+  // 下单页模板（v0.16 R58-7）
+  INVALID_ORDER_TEMPLATE: '无效的下单页模板'
 }
