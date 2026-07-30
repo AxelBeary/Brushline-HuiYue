@@ -13,6 +13,7 @@
         class="tpl-tier-img"
         :alt="tier.name"
         :preview-src-list="[imgUrl(tier.example_image)]"
+        preview-teleported
         lazy
       />
       <div class="tpl-tier-body">
