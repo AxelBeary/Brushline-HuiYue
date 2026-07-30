@@ -1,6 +1,6 @@
 import db from '../../db/connection.js'
 import { AppError, E } from '../../shared/errors.js'
-import { getOrder, compactQueue } from './order.service.js'
+import { getOrder, compactQueue, tryAutoPromote } from './order.service.js'
 
 // ============================================
 // 订单图库服务（从 order.service.js 拆出，v0.16）
@@ -34,6 +34,8 @@ export function deliverOrder(orderId, filePath, fileName, fileSize) {
       db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
         .run('delivered', orderId)
       compactQueue(order.artist_id)
+      // SPEC-004: 交付释放名额后尝试自动递补
+      tryAutoPromote(order.artist_id)
       statusChanged = true
     }
 
