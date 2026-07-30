@@ -54,7 +54,7 @@ const { imgUrl } = useArtistData(props)
   border: 1px solid var(--pal-border);
   border-radius: 12px;
   overflow: hidden;
-  transition: transform 0.3s, box-shadow 0.3s;
+  transition: transform 0.3s var(--ease-bounce, ease), box-shadow 0.3s var(--ease-bounce, ease);
 }
 .tpl-tier-card:hover {
   transform: translateY(-4px);
@@ -79,13 +79,13 @@ const { imgUrl } = useArtistData(props)
   margin-bottom: 10px;
 }
 .tpl-tier-name {
-  font-size: 18px;
+  font-size: clamp(16px, 2.5vw, 18px);
   font-weight: 600;
   font-family: var(--font-display);
   color: var(--pal-text);
 }
 .tpl-tier-price {
-  font-size: 26px;
+  font-size: clamp(22px, 3vw, 26px);
   font-weight: 700;
   color: var(--color-primary);
   font-variant-numeric: tabular-nums;
