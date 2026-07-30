@@ -159,3 +159,93 @@ export function getStageInfo(order) {
     stageProgress: { current: currentIdx + 1, total: stages.length }
   }
 }
+
+// ─── plan-node-speech: 话术变量替换 + 客户沟通数据 ───
+
+/** 截稿日格式化为 X月X日（无则空串） */
+function formatDeadline(deadline) {
+  if (!deadline) return ''
+  const d = new Date(deadline.replace(' ', 'T'))
+  if (isNaN(d.getTime())) return ''
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+/** 金额格式化（分 → ¥X 或 ¥X.XX） */
+function formatCentsYuan(cents) {
+  if (cents == null) return ''
+  const yuan = cents / 100
+  return Number.isInteger(yuan) ? `¥${yuan}` : `¥${yuan.toFixed(2)}`
+}
+
+/**
+ * 替换话术模板中的 9 个变量
+ * 无对应数据时替换为空字符串
+ */
+export function replaceSpeechVars(template, order, stageName) {
+  if (!template) return ''
+
+  // 已付金额（paid 分期合计）
+  const paidRow = db.prepare(
+    "SELECT COALESCE(SUM(amount_cents), 0) as s FROM order_payment_installments WHERE order_id = ? AND status = 'paid'"
+  ).get(order.id)
+  const paidCents = paidRow?.s ?? 0
+
+  const totalCents = order.final_price_cents ?? order.total_price_cents ?? null
+  const unpaidCents = totalCents != null ? Math.max(0, totalCents - paidCents) : null
+
+  const vars = {
+    '{客户名}': order.client_name || '',
+    '{客户QQ}': order.client_qq || '',
+    '{订单号}': order.order_no || '',
+    '{档位名}': order.tier_name || '',
+    '{节点名}': stageName || '',
+    '{截稿日}': formatDeadline(order.deadline),
+    '{总价}': formatCentsYuan(totalCents),
+    '{已付}': formatCentsYuan(paidCents),
+    '{待付}': formatCentsYuan(unpaidCents)
+  }
+
+  let result = template
+  for (const [key, val] of Object.entries(vars)) {
+    result = result.replaceAll(key, val)
+  }
+  return result
+}
+
+/**
+ * 获取订单的话术 + 客户沟通数据（供订单详情路由拼装）
+ * 返回：{ speechText, clientQq, totalPriceCents, paidCents, unpaidCents }
+ * 无 current_stage_id 时 speechText 为 null
+ */
+export function getSpeechInfo(order) {
+  // 已付金额
+  const paidRow = db.prepare(
+    "SELECT COALESCE(SUM(amount_cents), 0) as s FROM order_payment_installments WHERE order_id = ? AND status = 'paid'"
+  ).get(order.id)
+  const paidCents = paidRow?.s ?? 0
+
+  const totalCents = order.final_price_cents ?? order.total_price_cents ?? null
+  const unpaidCents = totalCents != null ? Math.max(0, totalCents - paidCents) : null
+
+  const base = {
+    clientQq: order.client_qq || null,
+    totalPriceCents: totalCents,
+    paidCents,
+    unpaidCents
+  }
+
+  // 无流程节点 → 无话术
+  if (!order.current_stage_id) {
+    return { ...base, speechText: null }
+  }
+
+  const stage = db.prepare(
+    'SELECT name, speech_template FROM artist_workflow_stages WHERE id = ?'
+  ).get(order.current_stage_id)
+  if (!stage) {
+    return { ...base, speechText: null }
+  }
+
+  const speechText = replaceSpeechVars(stage.speech_template, order, stage.name)
+  return { ...base, speechText }
+}

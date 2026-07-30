@@ -15,6 +15,7 @@ const MAX_BP = 10000
 const TOTAL_BP = 10000
 const MAX_INSTALLMENTS = 20
 const DEFAULT_NEW_BP = 1000
+const DEFAULT_SPEECH = '{客户名}，你的订单已{节点名}。'
 
 // ─── 内部工具 ───
 
@@ -76,7 +77,8 @@ function toCamel(row) {
     sortOrder: row.sort_order,
     takesPayment: !!row.takes_payment,
     basisPoints: row.basis_points,
-    isFinal: final ? final.id === row.id : false
+    isFinal: final ? final.id === row.id : false,
+    speechTemplate: row.speech_template ?? null
   }
 }
 
@@ -86,7 +88,8 @@ function listCamel(artistId) {
   return stages.map(s => ({
     id: s.id, name: s.name, description: s.description,
     sortOrder: s.sort_order, takesPayment: !!s.takes_payment,
-    basisPoints: s.basis_points, isFinal: final ? final.id === s.id : false
+    basisPoints: s.basis_points, isFinal: final ? final.id === s.id : false,
+    speechTemplate: s.speech_template ?? null
   }))
 }
 
@@ -109,13 +112,13 @@ export function addStage(artistId, { name, description }) {
       'UPDATE artist_workflow_stages SET sort_order = sort_order + 1 WHERE artist_id = ? AND sort_order >= ?'
     ).run(artistId, insertAt)
     const result = db.prepare(
-      'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, 0, NULL)'
+      "INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points, speech_template) VALUES (?, ?, ?, ?, 0, NULL, '{客户名}，你的订单已{节点名}。')"
     ).run(artistId, name, description || null, insertAt)
     return toCamel(getStageById(result.lastInsertRowid))
   })()
 }
 
-/** 改名 / 改描述 / 切换收款开关 */
+// 改名 / 改描述 / 切换收款开关 / 改话术
 export function updateStage(artistId, stageId, fields) {
   return db.transaction(() => {
     // P1-9: 在事务内获取 stage，避免 TOCTOU
@@ -135,6 +138,11 @@ export function updateStage(artistId, stageId, fields) {
     if (fields.description !== undefined) {
       db.prepare('UPDATE artist_workflow_stages SET description = ? WHERE id = ?')
         .run(fields.description || null, stageId)
+    }
+    // plan-node-speech: 话术模板（可选，不传则不改）
+    if (fields.speechTemplate !== undefined) {
+      db.prepare('UPDATE artist_workflow_stages SET speech_template = ? WHERE id = ?')
+        .run(fields.speechTemplate || null, stageId)
     }
 
     // 切换收款开关
@@ -281,10 +289,10 @@ export function seedArtistStages(artistId) {
   const source = tpl.length > 0 ? tpl : DEFAULT_TEMPLATE
 
   const insert = db.prepare(
-    'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points, speech_template) VALUES (?, ?, ?, ?, ?, ?, ?)'
   )
   for (const t of source) {
-    insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points)
+    insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points, DEFAULT_SPEECH)
   }
 }
 
@@ -299,10 +307,10 @@ export function resetArtistStages(artistId) {
     db.prepare('DELETE FROM artist_workflow_stages WHERE artist_id = ?').run(artistId)
     const tpl = getDefaultTemplate()
     const insert = db.prepare(
-      'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points, speech_template) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
     for (const t of tpl) {
-      insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points)
+      insert.run(artistId, t.name, t.description || null, t.sort_order, t.takes_payment ? 1 : 0, t.basis_points, DEFAULT_SPEECH)
     }
     assertInvariants(artistId)
     return listCamel(artistId)
