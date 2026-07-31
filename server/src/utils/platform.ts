@@ -4,7 +4,12 @@
  */
 
 // 平台识别规则：域名模式 → 平台标识
-const PLATFORM_RULES = [
+interface PlatformRule {
+  pattern: RegExp
+  platform: string
+}
+
+const PLATFORM_RULES: PlatformRule[] = [
   { pattern: /pixiv\.(net|me)/i, platform: 'pixiv' },
   { pattern: /(twitter\.com|x\.com)/i, platform: 'x' },
   { pattern: /weibo\.(com|cn)/i, platform: 'weibo' },
@@ -14,10 +19,10 @@ const PLATFORM_RULES = [
 ]
 
 // 已知平台标识白名单（手动选择时的合法值）
-export const KNOWN_PLATFORMS = ['pixiv', 'x', 'weibo', 'lofter', 'bilibili', 'xiaohongshu', 'other']
+export const KNOWN_PLATFORMS: string[] = ['pixiv', 'x', 'weibo', 'lofter', 'bilibili', 'xiaohongshu', 'other']
 
 // 平台标识 → 显示名
-export const PLATFORM_LABELS = {
+export const PLATFORM_LABELS: Record<string, string> = {
   pixiv: 'Pixiv',
   x: 'X (Twitter)',
   weibo: '微博',
@@ -32,7 +37,7 @@ export const PLATFORM_LABELS = {
  * @param {string} url - 完整 URL
  * @returns {string} 平台标识（pixiv/x/weibo/lofter/bilibili/xiaohongshu/other）
  */
-export function identifyPlatform(url) {
+export function identifyPlatform(url: string): string {
   if (!url || typeof url !== 'string') return 'other'
   for (const rule of PLATFORM_RULES) {
     if (rule.pattern.test(url)) return rule.platform
@@ -45,7 +50,7 @@ export function identifyPlatform(url) {
  * @param {string} platform - 平台标识
  * @returns {string} 显示名
  */
-export function getPlatformLabel(platform) {
+export function getPlatformLabel(platform: string): string {
   return PLATFORM_LABELS[platform] || PLATFORM_LABELS.other
 }
 
@@ -56,7 +61,7 @@ export function getPlatformLabel(platform) {
  * @param {string|null} platformUrlsJson - 数据库中的 JSON 字符串
  * @returns {Array<{url: string, platform: string, label: string}>}
  */
-export function parsePlatformUrls(platformUrlsJson) {
+export function parsePlatformUrls(platformUrlsJson: string | null): Array<{ url: string; platform: string; label: string }> {
   if (!platformUrlsJson) return []
   try {
     const parsed = JSON.parse(platformUrlsJson)

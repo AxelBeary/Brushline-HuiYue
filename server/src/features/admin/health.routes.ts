@@ -1,6 +1,7 @@
 import { requireAdmin } from '../../shared/middleware/auth.js'
 import { runHealthChecks, buildDiagnosticReport } from './health.service.js'
 import { MIGRATIONS } from '../../db/init.js'
+import type { FastifyInstance } from 'fastify'
 
 // ============================================
 // 系统自检路由（HC）
@@ -8,7 +9,7 @@ import { MIGRATIONS } from '../../db/init.js'
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
 
-export default async function healthRoutes(fastify) {
+export default async function healthRoutes(fastify: FastifyInstance) {
 
   /** GET /api/admin/health — 执行 8 项系统检查 */
   fastify.get('/api/admin/health', { preHandler: requireAdmin }, async () => {

@@ -12,14 +12,14 @@ import { getOrder } from './order.service.js'
  * 获取画师的活跃队列（按 queue_position 排序）
  * N1-1: 拖拽即绝对顺序，priority 退化为纯展示标签
  */
-export function getArtistQueue(artistId) {
+export function getArtistQueue(artistId: number): any[] {
   return db.prepare(`
     SELECT o.*, t.name as tier_name, t.price as tier_price
     FROM orders o
     LEFT JOIN price_tiers t ON o.tier_id = t.id
     WHERE o.artist_id = ? AND o.${ACTIVE_ORDER_SQL}
     ORDER BY o.queue_position ASC
-  `).all(artistId)
+  `).all(artistId) as any[]
 }
 
 /**
@@ -27,16 +27,16 @@ export function getArtistQueue(artistId) {
  * 前端传入完整的排序后 ID 数组，后端按序分配 queue_position
  * 拖拽不改变优先级，只改变同优先级内的位置
  */
-export function reorderQueue(artistId, orderedIds) {
+export function reorderQueue(artistId: number, orderedIds: number[]): any[] {
   if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
     throw new AppError(E.QUEUE_EMPTY)
   }
 
   // 校验所有 ID 属于该画师且为活跃订单
-  const activeOrders = db.prepare(`
+  const activeOrders = (db.prepare(`
     SELECT id FROM orders
     WHERE artist_id = ? AND ${ACTIVE_ORDER_SQL}
-  `).all(artistId).map(r => r.id)
+  `).all(artistId) as Array<{ id: number }>).map(r => r.id)
 
   const idSet = new Set(activeOrders)
   for (const id of orderedIds) {
@@ -62,7 +62,7 @@ export function reorderQueue(artistId, orderedIds) {
  * 更新订单优先级
  * N1-1: 优先级仅作展示标签，不重排队列
  */
-export function updatePriority(orderId, priority) {
+export function updatePriority(orderId: number, priority: string): any {
   const valid = ['high', 'medium', 'low']
   if (!valid.includes(priority)) throw new AppError(E.INVALID_PRIORITY, 400, { priority })
 

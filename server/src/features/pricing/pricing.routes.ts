@@ -9,32 +9,32 @@ import { AppError, E } from '../../shared/errors.js'
 // ============================================
 
 /** 限流守卫 */
-function guardRateLimit(key, max, windowMs) {
+function guardRateLimit(key: string, max: number, windowMs: number): void {
   if (!rateLimit(key, max, windowMs)) throw new AppError(E.RATE_LIMITED, 429)
 }
 
 /** 增项归属校验 preHandler */
-async function requireOwnAddon(request) {
+async function requireOwnAddon(request: any): Promise<void> {
   const id = parseInt(request.params.id, 10)
   if (isNaN(id)) throw new AppError(E.VALIDATION, 400)
   request.addon = pricingService.getAddon(request.artist.id, id)
 }
 
 /** 倍率归属校验 preHandler */
-async function requireOwnMultiplier(request) {
+async function requireOwnMultiplier(request: any): Promise<void> {
   const id = parseInt(request.params.id, 10)
   if (isNaN(id)) throw new AppError(E.VALIDATION, 400)
   // getMultipliers 返回全部，手动查找
-  const m = pricingService.getMultipliers(request.artist.id).find(x => x.id === id)
+  const m = pricingService.getMultipliers(request.artist.id).find((x: any) => x.id === id)
   if (!m) throw new AppError(E.MULTIPLIER_NOT_FOUND, 404)
   request.multiplier = m
 }
 
-export default async function pricingRoutes(fastify) {
+export default async function pricingRoutes(fastify: any) {
 
   // ─── 画师后台：增项管理 ───
 
-  fastify.get('/api/artist/addons', { preHandler: requireAuth }, async (request) => {
+  fastify.get('/api/artist/addons', { preHandler: requireAuth }, async (request: any) => {
     return pricingService.getAddons(request.artist.id)
   })
 
@@ -57,7 +57,7 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.createAddon(request.artist.id, request.body)
   })
 
@@ -80,13 +80,13 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.updateAddon(request.artist.id, parseInt(request.params.id, 10), request.body)
   })
 
   fastify.delete('/api/artist/addons/:id', {
     preHandler: [requireAuth, requireOwnAddon]
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.deleteAddon(request.artist.id, parseInt(request.params.id, 10))
   })
 
@@ -102,8 +102,8 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
-    return pricingService.reorderAddons(request.artist.id, request.body.orderedIds)
+  }, async (request: any) => {
+    return pricingService.reorderAddons(request.artist.id, (request.body as any).orderedIds)
   })
 
   fastify.put('/api/artist/addons/:id/tiers', {
@@ -118,13 +118,13 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
-    return pricingService.updateAddonTiers(request.artist.id, parseInt(request.params.id, 10), request.body.tierIds)
+  }, async (request: any) => {
+    return pricingService.updateAddonTiers(request.artist.id, parseInt(request.params.id, 10), (request.body as any).tierIds)
   })
 
   // ─── 画师后台：倍率管理 ───
 
-  fastify.get('/api/artist/multipliers', { preHandler: requireAuth }, async (request) => {
+  fastify.get('/api/artist/multipliers', { preHandler: requireAuth }, async (request: any) => {
     return pricingService.getMultipliers(request.artist.id)
   })
 
@@ -143,7 +143,7 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.createMultiplier(request.artist.id, request.body)
   })
 
@@ -161,13 +161,13 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.updateMultiplier(request.artist.id, parseInt(request.params.id, 10), request.body)
   })
 
   fastify.delete('/api/artist/multipliers/:id', {
     preHandler: [requireAuth, requireOwnMultiplier]
-  }, async (request) => {
+  }, async (request: any) => {
     return pricingService.deleteMultiplier(request.artist.id, parseInt(request.params.id, 10))
   })
 
@@ -177,10 +177,10 @@ export default async function pricingRoutes(fastify) {
    * GET /api/public/pricing/:subdomain
    * 获取画师完整报价（档位+增项+倍率+分期比例）
    */
-  fastify.get('/api/public/pricing/:subdomain', async (request) => {
+  fastify.get('/api/public/pricing/:subdomain', async (request: any) => {
     guardRateLimit(`pricing:${request.ip}`, 30, 5 * 60_000)
 
-    const artist = getArtistBySubdomain(request.params.subdomain)
+    const artist = getArtistBySubdomain(request.params.subdomain) as any
     if (!artist || artist.status === 'hidden') throw new AppError(E.ARTIST_NOT_FOUND, 404)
 
     return pricingService.getPublicPricing(artist.id)
@@ -217,12 +217,12 @@ export default async function pricingRoutes(fastify) {
         additionalProperties: false
       }
     }
-  }, async (request) => {
+  }, async (request: any) => {
     guardRateLimit(`calc:${request.ip}`, 30, 5 * 60_000)
 
-    const { subdomain, tierId, addons, usageMultiplierId, rushMultiplierId } = request.body
+    const { subdomain, tierId, addons, usageMultiplierId, rushMultiplierId } = request.body as any
 
-    const artist = getArtistBySubdomain(subdomain)
+    const artist = getArtistBySubdomain(subdomain) as any
     if (!artist) throw new AppError(E.ARTIST_NOT_FOUND, 404)
 
     return pricingService.calculatePrice(artist.id, {
