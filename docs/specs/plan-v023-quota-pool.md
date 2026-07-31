@@ -3,7 +3,7 @@
 > **编号**：plan-v023-quota-pool
 > **作者**：四号（需求整理）
 > **日期**：2026-08-01
-> **状态**：用户已拍板 Q1-Q4（2026-08-01），待三号确认技术细节 T1-T5
+> **状态**：用户已拍板 Q1-Q4 + 三号已确认 T1-T5（2026-08-01），可排期
 > **来源**：一号派工 01-to-04-v022-eval-20260801（B7 展开评估）
 > **原始需求**：SPEC-003 §11（2026-07-31 用户拍板方向）/ plan-v018-schedule D2（推后）
 
@@ -100,6 +100,8 @@ CREATE INDEX IF NOT EXISTS idx_order_payments_order ON order_payments(order_id);
 
 ### 2.4 分期状态推算逻辑
 
+> ⚠️ **T3 发现（三号确认 2026-08-01）**：现有代码中 installment status **永远是 pending**——没有任何代码路径会把它改成 paid。这意味着话术变量 `{已付}` `{待付}` 当前永远返回 ¥0。这是一个**现有 BUG**，额度池改造将顺带修复（改读 paid_total_cents 后不再依赖 status 字段）。
+
 ```js
 // 伪代码：根据 paid_total_cents 推算每期状态
 function computeInstallmentStatuses(order) {
@@ -118,7 +120,7 @@ function computeInstallmentStatuses(order) {
 }
 ```
 
-**待用户拍板**：是否需要 `partial`（部分付款）状态？还是简化为"覆盖/未覆盖"两态？
+用户已拍板（Q1）：三态（paid / partial / pending），部分覆盖可见。
 
 ### 2.5 与现有系统的关系
 
@@ -133,7 +135,7 @@ function computeInstallmentStatuses(order) {
 
 ---
 
-## 3. API 设计（建议，待三号确认）
+## 3. API 设计（三号已确认）
 
 ### 3.1 新增
 
@@ -152,10 +154,10 @@ function computeInstallmentStatuses(order) {
 
 ### 3.3 废弃
 
-| 现有 | 处理 |
-|------|------|
-| 工作流推进时隐式改 installment status | 移除（推进只管 stage） |
-| adjustInstallments（改节点金额） | 替换为改 final_price_cents |
+| 现有 | 处理 | 具体位置（T4 确认） |
+|------|------|---------------------|
+| 工作流推进时隐式改 installment status | 移除（推进只管 stage） | T3 确认：本来就没耦合，无需改 |
+| adjustInstallments（改节点金额） | 删除函数，改为改 final_price_cents | 仅 2 个调用点：`order.service.js` L545（addExtraItem）/ L576（deleteExtraItem） |
 
 ---
 
@@ -227,14 +229,28 @@ function computeInstallmentStatuses(order) {
 ALTER TABLE orders ADD COLUMN paid_total_cents INTEGER DEFAULT 0;
 
 -- 2. 存量换算：已付分期的 SUM → paid_total_cents
+-- ⚠️ T3 发现：status 永远是 pending，所以存量换算结果全部为 0
+-- 这不影响正确性（本来就没记录过收款），但说明现有话术变量 {已付} 一直是 ¥0
 UPDATE orders SET paid_total_cents = (
   SELECT COALESCE(SUM(amount_cents), 0)
   FROM order_payment_installments
   WHERE order_id = orders.id AND status = 'paid'
 );
 
--- 3. 建收款记录表（存量订单不补录流水，paid_total_cents 即为初始值）
-CREATE TABLE IF NOT EXISTS order_payments (...);
+-- 3. 建收款记录表
+CREATE TABLE IF NOT EXISTS order_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  amount_cents INTEGER NOT NULL,
+  note TEXT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_by TEXT DEFAULT 'artist',
+  -- T2 硬约束：paid_total_cents + amount >= 0（不允许扣成负数）
+  -- 由应用层事务保证，SQLite 无 CHECK 跨表约束
+  -- T2：负数记录 note 必填（应用层校验）
+  -- T2：永不 DELETE order_payments 记录
+);
+CREATE INDEX IF NOT EXISTS idx_order_payments_order ON order_payments(order_id);
 ```
 
 ### 5.2 兼容期
@@ -280,31 +296,33 @@ CREATE TABLE IF NOT EXISTS order_payments (...);
 
 ---
 
-## 8. 待三号确认
+## 8. 三号已确认（2026-08-01）
 
-| # | 问题 |
-|---|------|
-| T1 | paid_total_cents 冗余字段 vs 每次 SUM(order_payments) 的性能取舍 |
-| T2 | 撤销收款用 DELETE 还是负数记录（影响审计和并发安全） |
-| T3 | 工作流推进与 installment status 的解耦是否有遗漏调用点 |
-| T4 | adjustInstallments 替换为改 final_price_cents 的影响范围 |
-| T5 | 话术变量 {已付}{待付} 改用 paid_total_cents 后是否影响已有话术模板 |
+| # | 问题 | 结论 |
+|---|------|------|
+| T1 | paid_total_cents 冗余字段 vs 每次 SUM | ✅ 用冗余字段。事务原子更新，SQLite 单写者无并发风险 |
+| T2 | 撤销收款用 DELETE 还是负数记录 | ✅ 负数流水 + `paid_total_cents + amount >= 0` 硬约束 + 负数 note 必填 + 永不 DELETE |
+| T3 | 工作流推进与 installment status 解耦 | ⚠️ **发现现有 BUG**：installment status 永远是 pending，{已付}/{待付} 话术变量永远 ¥0。解耦比预想简单（本来就没耦合）。额度池改造顺带修复 |
+| T4 | adjustInstallments 影响范围 | ✅ 仅 2 个调用点（order.service L545 addExtraItem / L576 deleteExtraItem），删除即可 |
+| T5 | 话术变量改用 paid_total_cents | ✅ 模板格式不变，顺带修 T3 BUG |
 
 ---
 
-## 9. 工时估算（粗估，待三号/二号确认）
+## 9. 工时估算（三号已确认）
 
 | 层 | 工作 | 时间 |
 |----|------|------|
-| 后端 | 迁移 v24（加字段 + 建表 + 存量换算） | 1h |
-| 后端 | 收款 API（POST/DELETE/GET payments） | 2h |
-| 后端 | 分期状态推算 + 话术变量改造 + adjustInstallments 替换 | 2h |
-| 后端 | 工作流推进解耦（移除隐式改 status） | 1h |
+| 后端 | 迁移 v24（加字段 + 建表 + 存量换算 + T2 约束） | 1h |
+| 后端 | 收款 API（POST/GET payments，含负数校验 + 非负硬约束） | 2h |
+| 后端 | 分期状态推算（三态）+ 话术变量改读 paid_total_cents（顺带修 T3 BUG） | 2h |
+| 后端 | 删除 adjustInstallments（2 个调用点改 final_price_cents） | 0.5h |
 | 前端（画师端） | 收款记录区重做（PaymentBar → 池模型 + 流水列表 + 记录/撤销弹窗） | 3h |
-| 前端（客户端） | track 页付款展示简化 | 1h |
+| 前端（客户端） | track 页付款展示（四项数据 + 进度条） | 1h |
 | 前端（管理端） | 订单详情加收款流水只读展示 | 1h |
-| 测试 | API + 迁移 + 前端交互 + 存量兼容 | 2h |
-| **合计** | | **~13h** |
+| 测试 | API + 迁移 + 前端交互 + 存量兼容 + T3 BUG 回归 | 2h |
+| **合计** | | **~12.5h** |
+
+> 注：T3 确认解耦无需额外工作（本来就没耦合），原估 1h 降为 0。T4 确认仅 2 个调用点，从 2h 降为 0.5h。
 
 ---
 
@@ -312,7 +330,8 @@ CREATE TABLE IF NOT EXISTS order_payments (...);
 
 | 风险 | 等级 | 缓解 |
 |------|:----:|------|
-| 存量数据换算错误 | 🟡 | 迁移前后 SUM 校验脚本 |
-| 工作流推进解耦遗漏 | 🟡 | 全局搜索 installment status 写入点 |
-| 话术变量语义变化 | 🟢 | {已付} 含义不变（只是数据源变了） |
+| **T3 现有 BUG（话术变量永远 ¥0）** | 🔴 | v0.23 首要修复项。额度池改造顺带修复，改读 paid_total_cents |
+| 存量数据换算错误 | 🟢 | T3 确认 status 永远 pending → 存量换算结果全为 0，无风险 |
+| 话术变量语义变化 | 🟢 | {已付} 含义不变（只是数据源变了），模板格式不变（T5 确认） |
 | 前端改动面广 | 🟡 | 分两批：先后端+画师端，再客户端+管理端 |
+| 负数流水误操作 | 🟡 | T2 硬约束（不允许扣成负数）+ 负数 note 必填 + 永不 DELETE |
