@@ -30,7 +30,7 @@ export default async function guestbookRoutes(fastify) {
       return reply.code(429).send({ code: 'RATE_LIMITED', error: '操作过于频繁，请稍后再试' })
     }
     const artist = artistService.getArtistBySubdomain(request.params.subdomain)
-    if (!artist || artist.qq_number === getAdminQq()) {
+    if (!artist || artist.qq_number === getAdminQq() || artist.status === 'hidden') {
       return reply.code(404).send({ error: '画师不存在' })
     }
     const msg = guestbookService.createMessage(artist.id, request.body.nickname, request.body.content)
@@ -40,7 +40,7 @@ export default async function guestbookRoutes(fastify) {
   /** GET /api/public/artist/:subdomain/messages — 已审核留言（分页） */
   fastify.get('/api/public/artist/:subdomain/messages', async (request, reply) => {
     const artist = artistService.getArtistBySubdomain(request.params.subdomain)
-    if (!artist || artist.qq_number === getAdminQq()) {
+    if (!artist || artist.qq_number === getAdminQq() || artist.status === 'hidden') {
       return reply.code(404).send({ error: '画师不存在' })
     }
     const page = Math.max(parseInt(request.query.page) || 1, 1)
