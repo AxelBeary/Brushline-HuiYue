@@ -68,3 +68,13 @@ export function adminDeleteMessage(messageId) {
   db.prepare('UPDATE guestbook_messages SET deleted_by_admin = 1 WHERE id = ?').run(messageId)
   return getMessageById(messageId)
 }
+
+/** 管理员查询：跨画师全部留言（含 artist_name），按 created_at DESC */
+export function getAdminMessages() {
+  return db.prepare(`
+    SELECT m.*, a.name AS artist_name
+    FROM guestbook_messages m
+    LEFT JOIN artists a ON m.artist_id = a.id
+    ORDER BY m.created_at DESC
+  `).all()
+}

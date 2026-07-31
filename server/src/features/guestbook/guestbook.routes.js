@@ -103,6 +103,11 @@ export default async function guestbookRoutes(fastify) {
 
   // ─── 管理员接口 ───
 
+  /** GET /api/admin/messages — 管理员查看全部留言（跨画师，含 artist_name） */
+  fastify.get('/api/admin/messages', { preHandler: requireAdmin }, async () => {
+    return guestbookService.getAdminMessages()
+  })
+
   /** DELETE /api/admin/messages/:id — 管理员强制删除（软删除） */
   fastify.delete('/api/admin/messages/:id', { preHandler: requireAdmin }, async (request, reply) => {
     const msg = guestbookService.adminDeleteMessage(parseInt(request.params.id))
