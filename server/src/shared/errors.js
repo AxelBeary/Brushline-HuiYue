@@ -32,6 +32,8 @@ export const E = {
   NAME_EMPTY: 'NAME_EMPTY',
   CODE_FORMAT: 'CODE_FORMAT',
   CODE_TAKEN: 'CODE_TAKEN',
+  QQ_TAKEN: 'QQ_TAKEN',
+  SUBDOMAIN_TAKEN: 'SUBDOMAIN_TAKEN',
   INVALID_STATUS: 'INVALID_STATUS',
   INVALID_URL: 'INVALID_URL',
 
@@ -187,6 +189,8 @@ export const ERROR_MESSAGES = {
   NAME_EMPTY: '名称不能为空',
   CODE_FORMAT: '身份码格式不正确（仅限字母和数字）',
   CODE_TAKEN: '该身份码已被使用',
+  QQ_TAKEN: '该QQ号已被注册',
+  SUBDOMAIN_TAKEN: '该子域名已被使用',
   INVALID_STATUS: '无效的状态值',
   INVALID_URL: '链接格式不正确',
   SUBDOMAIN_FORMAT: '子域名格式不正确',
