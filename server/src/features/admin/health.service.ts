@@ -10,14 +10,23 @@ import { resolve, join } from 'path'
 const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || './uploads')
 const DATA_DIR = resolve(process.env.DB_PATH || './data/commission.db').replace(/[/\\][^/\\]+$/, '')
 
+/** 单项检查结果 */
+interface HealthCheckResult {
+  id: string
+  name: string
+  status: string
+  summary: string
+  detail: Record<string, unknown>
+}
+
 /** 1. 数据库连接：SELECT 1 + 临时表读写 */
-function checkDb() {
+function checkDb(): HealthCheckResult {
   try {
     db.prepare('SELECT 1').get()
     // 写入临时表再删
     db.exec('CREATE TABLE IF NOT EXISTS _health_check_tmp (v INTEGER)')
     db.prepare('INSERT INTO _health_check_tmp (v) VALUES (1)').run()
-    const row = db.prepare('SELECT v FROM _health_check_tmp').get()
+    const row = db.prepare('SELECT v FROM _health_check_tmp').get() as { v: number } | undefined
     db.exec('DROP TABLE _health_check_tmp')
     if (row?.v !== 1) {
       return { id: 'db', name: '数据库连接', status: 'fail', summary: '读写验证失败', detail: { readBack: row } }
@@ -29,9 +38,9 @@ function checkDb() {
 }
 
 /** 2. 迁移版本：对比已应用 vs 最新 */
-function checkMigration(latestVersion) {
+function checkMigration(latestVersion: number): HealthCheckResult {
   try {
-    const rows = db.prepare('SELECT version, name FROM schema_migrations ORDER BY version ASC').all()
+    const rows = db.prepare('SELECT version, name FROM schema_migrations ORDER BY version ASC').all() as Array<{ version: number; name: string }>
     const applied = rows.length > 0 ? rows[rows.length - 1].version : 0
     const isLatest = applied >= latestVersion
     return {
@@ -46,9 +55,10 @@ function checkMigration(latestVersion) {
 }
 
 /** 3. 上传目录：可读写 */
-async function checkUploads() {
+async function checkUploads(): Promise<HealthCheckResult> {
   try {
-    await access(UPLOAD_DIR, constants.R_OK | constants.W_OK)
+    // 过渡：fs callback API 当 promise 用，as any 保持运行时行为不变
+    await (access as any)(UPLOAD_DIR, constants.R_OK | constants.W_OK)
     return { id: 'uploads', name: '上传目录', status: 'ok', summary: `${UPLOAD_DIR} 可读写`, detail: { path: UPLOAD_DIR } }
   } catch (err) {
     return { id: 'uploads', name: '上传目录', status: 'fail', summary: `${UPLOAD_DIR} 不可访问`, detail: { path: UPLOAD_DIR, error: err.message } }
@@ -56,9 +66,10 @@ async function checkUploads() {
 }
 
 /** 4. 磁盘空间（仅供参考，Docker 内值可能不准） */
-async function checkDisk() {
+async function checkDisk(): Promise<HealthCheckResult> {
   try {
-    const stats = await statfs(UPLOAD_DIR)
+    // 过渡：fs.statfs callback API，as any 保持运行时行为不变
+    const stats: any = await (statfs as any)(UPLOAD_DIR)
     const totalBytes = stats.blocks * stats.bsize
     const freeBytes = stats.bfree * stats.bsize
     const usedBytes = totalBytes - freeBytes
@@ -77,25 +88,25 @@ async function checkDisk() {
 }
 
 /** 5. 数据完整性：孤儿记录检查 */
-function checkIntegrity() {
+function checkIntegrity(): HealthCheckResult {
   try {
-    const checks = []
+    const checks: Array<{ table: string; orphans: number }> = []
     // orders → artists
-    const orphanOrders = db.prepare(
+    const orphanOrders = (db.prepare(
       'SELECT COUNT(*) as c FROM orders o LEFT JOIN artists a ON o.artist_id = a.id WHERE a.id IS NULL'
-    ).get().c
+    ).get() as { c: number }).c
     checks.push({ table: 'orders→artists', orphans: orphanOrders })
 
     // orders → price_tiers（tier_id 可为 NULL，只查非 NULL 的）
-    const orphanTiers = db.prepare(
+    const orphanTiers = (db.prepare(
       'SELECT COUNT(*) as c FROM orders o LEFT JOIN price_tiers t ON o.tier_id = t.id WHERE o.tier_id IS NOT NULL AND t.id IS NULL'
-    ).get().c
+    ).get() as { c: number }).c
     checks.push({ table: 'orders→price_tiers', orphans: orphanTiers })
 
     // order_extra_items → orders
-    const orphanExtras = db.prepare(
+    const orphanExtras = (db.prepare(
       'SELECT COUNT(*) as c FROM order_extra_items e LEFT JOIN orders o ON e.order_id = o.id WHERE o.id IS NULL'
-    ).get().c
+    ).get() as { c: number }).c
     checks.push({ table: 'order_extra_items→orders', orphans: orphanExtras })
 
     const totalOrphans = orphanOrders + orphanTiers + orphanExtras
@@ -111,9 +122,9 @@ function checkIntegrity() {
 }
 
 /** 6. 备份状态：扫描 data/*.bak.* 最新文件 */
-function checkBackup() {
+function checkBackup(): HealthCheckResult {
   try {
-    let latest = null
+    let latest: string | null = null
     let latestTime = 0
     try {
       const files = readdirSync(DATA_DIR)
@@ -145,7 +156,7 @@ function checkBackup() {
 }
 
 /** 7. JWT_SECRET：检查是否为默认值/空值 */
-function checkSecret() {
+function checkSecret(): HealthCheckResult {
   const secret = process.env.SESSION_SECRET
   const DEFAULTS = ['dev-cookie-secret-change-in-production', 'dev-secret', '']
   if (!secret) {
@@ -158,12 +169,12 @@ function checkSecret() {
 }
 
 /** 8. Node 版本（信息项，永远 ok） */
-function checkNode() {
+function checkNode(): HealthCheckResult {
   return { id: 'node', name: 'Node 版本', status: 'ok', summary: process.version, detail: { version: process.version, platform: process.platform, arch: process.arch } }
 }
 
 /** 执行全部 8 项检查 */
-export async function runHealthChecks(latestVersion) {
+export async function runHealthChecks(latestVersion: number): Promise<HealthCheckResult[]> {
   return [
     checkDb(),
     checkMigration(latestVersion),
@@ -177,7 +188,7 @@ export async function runHealthChecks(latestVersion) {
 }
 
 /** 生成诊断包（检查结果 + 环境信息，不含敏感数据） */
-export async function buildDiagnosticReport(latestVersion) {
+export async function buildDiagnosticReport(latestVersion: number) {
   const checks = await runHealthChecks(latestVersion)
   return {
     generatedAt: new Date().toISOString(),

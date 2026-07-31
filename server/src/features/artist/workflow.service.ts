@@ -1,5 +1,6 @@
 import db from '../../db/connection.js'
 import { AppError, E } from '../../shared/errors.js'
+import type { WorkflowStage } from '../../types/entities.js'
 
 // ============================================
 // 流程与比例服务
@@ -17,26 +18,52 @@ const MAX_INSTALLMENTS = 20
 const DEFAULT_NEW_BP = 1000
 const DEFAULT_SPEECH = '{客户名}，你的订单已{节点名}。'
 
-// ─── 内部工具 ───
-
-function getStages(artistId) {
-  return db.prepare(
-    'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
-  ).all(artistId)
+/** 默认模板行（无 id/artist_id/speech_template） */
+interface TemplateRow {
+  name: string
+  description: string | null
+  sort_order: number
+  takes_payment: number
+  basis_points: number | null
 }
 
-function getStageById(id) {
-  return db.prepare('SELECT * FROM artist_workflow_stages WHERE id = ?').get(id)
+/** 默认模板表行（含 id） */
+interface DefaultTemplateRow extends TemplateRow {
+  id: number
+}
+
+/** camelCase 输出 */
+interface StageCamel {
+  id: number
+  name: string
+  description: string | null
+  sortOrder: number
+  takesPayment: boolean
+  basisPoints: number
+  isFinal: boolean
+  speechTemplate: string | null
+}
+
+// ─── 内部工具 ───
+
+function getStages(artistId: number): WorkflowStage[] {
+  return db.prepare(
+    'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
+  ).all(artistId) as WorkflowStage[]
+}
+
+function getStageById(id: number): WorkflowStage | undefined {
+  return db.prepare('SELECT * FROM artist_workflow_stages WHERE id = ?').get(id) as WorkflowStage | undefined
 }
 
 /** 找到最后一个收款节点（尾款） */
-function findFinal(stages) {
+function findFinal(stages: WorkflowStage[]): WorkflowStage | null {
   const payStages = stages.filter(s => s.takes_payment)
   return payStages.length > 0 ? payStages[payStages.length - 1] : null
 }
 
 /** 重算尾款基点并写入 */
-function recalcFinal(artistId) {
+function recalcFinal(artistId: number): void {
   const stages = getStages(artistId)
   const final = findFinal(stages)
   if (!final) return
@@ -49,7 +76,7 @@ function recalcFinal(artistId) {
 }
 
 /** 校验不变式 I1~I4，违反则抛错 */
-function assertInvariants(artistId) {
+function assertInvariants(artistId: number): void {
   const stages = getStages(artistId)
   const payStages = stages.filter(s => s.takes_payment)
 
@@ -66,7 +93,7 @@ function assertInvariants(artistId) {
   if (sum !== TOTAL_BP) throw new AppError(E.SUM_NOT_100)
 }
 
-function toCamel(row) {
+function toCamel(row: WorkflowStage | undefined): StageCamel | null {
   if (!row) return null
   const stages = getStages(row.artist_id)
   const final = findFinal(stages)
@@ -82,7 +109,7 @@ function toCamel(row) {
   }
 }
 
-function listCamel(artistId) {
+function listCamel(artistId: number): StageCamel[] {
   const stages = getStages(artistId)
   const final = findFinal(stages)
   return stages.map(s => ({
@@ -96,12 +123,12 @@ function listCamel(artistId) {
 // ─── 公开 API ───
 
 /** 获取画师的流程节点列表（含 isFinal 计算字段） */
-export function getWorkflow(artistId) {
+export function getWorkflow(artistId: number): StageCamel[] {
   return listCamel(artistId)
 }
 
 /** 添加节点（插入到倒数第二位，R3） */
-export function addStage(artistId, { name, description }) {
+export function addStage(artistId: number, { name, description }: { name: string; description?: string | null }): StageCamel | null {
   return db.transaction(() => {
     const stages = getStages(artistId)
     const maxOrder = stages.length > 0 ? stages[stages.length - 1].sort_order : 0
@@ -114,12 +141,12 @@ export function addStage(artistId, { name, description }) {
     const result = db.prepare(
       "INSERT INTO artist_workflow_stages (artist_id, name, description, sort_order, takes_payment, basis_points, speech_template) VALUES (?, ?, ?, ?, 0, NULL, '{客户名}，你的订单已{节点名}。')"
     ).run(artistId, name, description || null, insertAt)
-    return toCamel(getStageById(result.lastInsertRowid))
+    return toCamel(getStageById(Number(result.lastInsertRowid)))
   })()
 }
 
 // 改名 / 改描述 / 切换收款开关 / 改话术
-export function updateStage(artistId, stageId, fields) {
+export function updateStage(artistId: number, stageId: number, fields: Record<string, unknown>): StageCamel | null {
   return db.transaction(() => {
     // P1-9: 在事务内获取 stage，避免 TOCTOU
     const stage = getStageById(stageId)
@@ -187,7 +214,7 @@ export function updateStage(artistId, stageId, fields) {
 }
 
 /** 删除节点（尾款拒绝；收款节点比例并入尾款） */
-export function deleteStage(artistId, stageId) {
+export function deleteStage(artistId: number, stageId: number): { success: boolean } {
   const stage = getStageById(stageId)
   if (!stage || stage.artist_id !== artistId) throw new AppError(E.STAGE_NOT_FOUND)
 
@@ -199,9 +226,9 @@ export function deleteStage(artistId, stageId) {
     if (final && final.id === stageId) throw new AppError(E.FINAL_CANNOT_DELETE)
 
     // P1-5: 有活跃订单引用该节点时阻止删除
-    const activeCount = db.prepare(
+    const activeCount = (db.prepare(
       "SELECT COUNT(*) as c FROM orders WHERE current_stage_id = ? AND status NOT IN ('delivered', 'cancelled')"
-    ).get(stageId).c
+    ).get(stageId) as { c: number }).c
     if (activeCount > 0) {
       throw new AppError(E.STAGE_IN_USE, 400, { count: activeCount })
     }
@@ -226,7 +253,7 @@ export function deleteStage(artistId, stageId) {
 }
 
 /** 拖拽排序（尾款可能易主，自动重算） */
-export function reorderStages(artistId, orderedIds) {
+export function reorderStages(artistId: number, orderedIds: number[]): StageCamel[] {
   return db.transaction(() => {
     const stages = getStages(artistId)
     const idSet = new Set(stages.map(s => s.id))
@@ -248,7 +275,7 @@ export function reorderStages(artistId, orderedIds) {
 }
 
 /** 批量保存比例（比例条 [保存比例] 按钮） */
-export function savePayment(artistId, nodes) {
+export function savePayment(artistId: number, nodes: Array<{ id: number; basisPoints: number }>): StageCamel[] {
   return db.transaction(() => {
     const stages = getStages(artistId)
     const final = findFinal(stages)
@@ -275,7 +302,7 @@ export function savePayment(artistId, nodes) {
 
 // ─── 默认模板 ───
 
-const DEFAULT_TEMPLATE = [
+const DEFAULT_TEMPLATE: TemplateRow[] = [
   { name: '定稿', description: '双方确认稿件需求与规格', sort_order: 1, takes_payment: 0, basis_points: null },
   { name: '排期确认', description: '确认排期，收取定金', sort_order: 2, takes_payment: 1, basis_points: 3000 },
   { name: '草稿确认', description: null, sort_order: 3, takes_payment: 0, basis_points: null },
@@ -286,14 +313,14 @@ const DEFAULT_TEMPLATE = [
 ]
 
 /** 从默认模板复制到画师 */
-export function seedArtistStages(artistId) {
-  const count = db.prepare(
+export function seedArtistStages(artistId: number): void {
+  const count = (db.prepare(
     'SELECT COUNT(*) AS c FROM artist_workflow_stages WHERE artist_id = ?'
-  ).get(artistId).c
+  ).get(artistId) as { c: number }).c
   if (count > 0) return // 幂等
 
   // 优先从 default_workflow_template 读取（管理员可能已修改）
-  const tpl = db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all()
+  const tpl = db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all() as TemplateRow[]
   const source = tpl.length > 0 ? tpl : DEFAULT_TEMPLATE
 
   const insert = db.prepare(
@@ -305,12 +332,12 @@ export function seedArtistStages(artistId) {
 }
 
 /** 从默认模板复制到画师（createArtist 调用） */
-export function copyTemplateToArtist(artistId) {
+export function copyTemplateToArtist(artistId: number): void {
   seedArtistStages(artistId)
 }
 
 /** 重置画师流程为默认模板（画师主动操作） */
-export function resetArtistStages(artistId) {
+export function resetArtistStages(artistId: number): StageCamel[] {
   return db.transaction(() => {
     db.prepare('DELETE FROM artist_workflow_stages WHERE artist_id = ?').run(artistId)
     const tpl = getDefaultTemplate()
@@ -327,11 +354,11 @@ export function resetArtistStages(artistId) {
 
 // ─── 管理员：默认模板 CRUD ───
 
-export function getDefaultTemplate() {
-  return db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all()
+export function getDefaultTemplate(): DefaultTemplateRow[] {
+  return db.prepare('SELECT * FROM default_workflow_template ORDER BY sort_order ASC').all() as DefaultTemplateRow[]
 }
 
-export function updateDefaultTemplate(nodes) {
+export function updateDefaultTemplate(nodes: Array<{ name: string; description?: string | null; takesPayment?: boolean; basisPoints?: number }>): DefaultTemplateRow[] {
   return db.transaction(() => {
     db.prepare('DELETE FROM default_workflow_template').run()
     const insert = db.prepare(
@@ -342,9 +369,9 @@ export function updateDefaultTemplate(nodes) {
     nodes.forEach((n, i) => {
       const bp = n.takesPayment ? (n.basisPoints || 0) : null
       // P1-1: 收款节点必须满足最低比例
-      if (n.takesPayment && bp < MIN_BP) throw new AppError(E.BP_TOO_LOW, 400, { name: n.name })
+      if (n.takesPayment && bp! < MIN_BP) throw new AppError(E.BP_TOO_LOW, 400, { name: n.name })
       insert.run(n.name, n.description || null, i + 1, n.takesPayment ? 1 : 0, bp)
-      if (n.takesPayment) { paySum += bp; payCount++ }
+      if (n.takesPayment) { paySum += bp!; payCount++ }
     })
     // 校验
     if (payCount === 0) throw new AppError(E.NO_PAYMENT_NODE)
@@ -354,7 +381,7 @@ export function updateDefaultTemplate(nodes) {
   })()
 }
 
-export function resetDefaultTemplate() {
+export function resetDefaultTemplate(): DefaultTemplateRow[] {
   return db.transaction(() => {
     db.prepare('DELETE FROM default_workflow_template').run()
     const insert = db.prepare(

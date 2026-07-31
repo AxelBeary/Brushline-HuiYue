@@ -4,39 +4,52 @@ import db from '../../db/connection.js'
 // 留言板服务（F4）
 // ============================================
 
-export function getMessageById(id) {
-  return db.prepare('SELECT * FROM guestbook_messages WHERE id = ?').get(id)
+/** 留言板消息行 */
+export interface GuestbookMessage {
+  id: number
+  artist_id: number
+  nickname: string
+  content: string
+  status: string
+  artist_reply: string | null
+  replied_at: string | null
+  deleted_by_admin: number
+  created_at: string
+}
+
+export function getMessageById(id: number): GuestbookMessage | undefined {
+  return db.prepare('SELECT * FROM guestbook_messages WHERE id = ?').get(id) as GuestbookMessage | undefined
 }
 
 /** 客户提交留言（默认 pending） */
-export function createMessage(artistId, nickname, content) {
+export function createMessage(artistId: number, nickname: string, content: string): GuestbookMessage | undefined {
   const result = db.prepare(
     'INSERT INTO guestbook_messages (artist_id, nickname, content) VALUES (?, ?, ?)'
   ).run(artistId, nickname, content)
-  return getMessageById(result.lastInsertRowid)
+  return getMessageById(result.lastInsertRowid as number)
 }
 
 /** 公开查询：仅 approved 且未被管理员删除，按 created_at DESC 分页 */
-export function getPublicMessages(artistId, page = 1, pageSize = 20) {
+export function getPublicMessages(artistId: number, page: number = 1, pageSize: number = 20): { messages: GuestbookMessage[]; total: number; page: number; pageSize: number } {
   const offset = (page - 1) * pageSize
   const messages = db.prepare(
     "SELECT * FROM guestbook_messages WHERE artist_id = ? AND status = 'approved' AND deleted_by_admin = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?"
-  ).all(artistId, pageSize, offset)
-  const total = db.prepare(
+  ).all(artistId, pageSize, offset) as GuestbookMessage[]
+  const total = (db.prepare(
     "SELECT COUNT(*) as c FROM guestbook_messages WHERE artist_id = ? AND status = 'approved' AND deleted_by_admin = 0"
-  ).get(artistId).c
+  ).get(artistId) as { c: number }).c
   return { messages, total, page, pageSize }
 }
 
 /** 画师查询：自己所有留言（含 pending/rejected），按 created_at DESC */
-export function getArtistMessages(artistId) {
+export function getArtistMessages(artistId: number): GuestbookMessage[] {
   return db.prepare(
     'SELECT * FROM guestbook_messages WHERE artist_id = ? ORDER BY created_at DESC'
-  ).all(artistId)
+  ).all(artistId) as GuestbookMessage[]
 }
 
 /** 通过留言（归属校验：不匹配返回 null） */
-export function approveMessage(artistId, messageId) {
+export function approveMessage(artistId: number, messageId: number): GuestbookMessage | null | undefined {
   const msg = getMessageById(messageId)
   if (!msg || msg.artist_id !== artistId) return null
   db.prepare("UPDATE guestbook_messages SET status = 'approved' WHERE id = ?").run(messageId)
@@ -44,7 +57,7 @@ export function approveMessage(artistId, messageId) {
 }
 
 /** 拒绝留言（静默，归属校验） */
-export function rejectMessage(artistId, messageId) {
+export function rejectMessage(artistId: number, messageId: number): GuestbookMessage | null | undefined {
   const msg = getMessageById(messageId)
   if (!msg || msg.artist_id !== artistId) return null
   db.prepare("UPDATE guestbook_messages SET status = 'rejected' WHERE id = ?").run(messageId)
@@ -52,7 +65,7 @@ export function rejectMessage(artistId, messageId) {
 }
 
 /** 画师回复（归属校验） */
-export function replyMessage(artistId, messageId, reply) {
+export function replyMessage(artistId: number, messageId: number, reply: string): GuestbookMessage | null | undefined {
   const msg = getMessageById(messageId)
   if (!msg || msg.artist_id !== artistId) return null
   db.prepare(
@@ -62,7 +75,7 @@ export function replyMessage(artistId, messageId, reply) {
 }
 
 /** 管理员强制删除（软删除，不物理删） */
-export function adminDeleteMessage(messageId) {
+export function adminDeleteMessage(messageId: number): GuestbookMessage | null | undefined {
   const msg = getMessageById(messageId)
   if (!msg) return null
   db.prepare('UPDATE guestbook_messages SET deleted_by_admin = 1 WHERE id = ?').run(messageId)
@@ -70,11 +83,11 @@ export function adminDeleteMessage(messageId) {
 }
 
 /** 管理员查询：跨画师全部留言（含 artist_name），按 created_at DESC */
-export function getAdminMessages() {
+export function getAdminMessages(): Array<GuestbookMessage & { artist_name: string | null }> {
   return db.prepare(`
     SELECT m.*, a.name AS artist_name
     FROM guestbook_messages m
     LEFT JOIN artists a ON m.artist_id = a.id
     ORDER BY m.created_at DESC
-  `).all()
+  `).all() as Array<GuestbookMessage & { artist_name: string | null }>
 }

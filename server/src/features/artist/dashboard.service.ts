@@ -14,22 +14,28 @@ import { toSqliteDate, localDayStartSqlite, localDayEndSqlite } from '../../util
 /**
  * 获取本地时区某月一号零点的 SQLite 格式
  */
-function localMonthStart(year, month) {
+function localMonthStart(year: number, month: number): string {
   return toSqliteDate(new Date(year, month, 1))
 }
 
 /**
  * 获取本地时区某季度第一天零点的 SQLite 格式
  */
-function localQuarterStart(year, quarter) {
+function localQuarterStart(year: number, quarter: number): string {
   return toSqliteDate(new Date(year, quarter * 3, 1))
 }
 
 /**
  * 获取本地时区某年第一天零点的 SQLite 格式
  */
-function localYearStart(year) {
+function localYearStart(year: number): string {
   return toSqliteDate(new Date(year, 0, 1))
+}
+
+interface RevenueBar {
+  label: string
+  cents: number
+  count: number
 }
 
 /**
@@ -37,12 +43,12 @@ function localYearStart(year) {
  * period: 'month' | 'quarter' | 'year'
  * 返回：{ bars: [{label, cents}], summary: { totalCents, completedCount, changePercent } }
  */
-export function getRevenue(artistId, period = 'month') {
+export function getRevenue(artistId: number, period: string = 'month') {
   const now = new Date()
   const year = now.getFullYear()
 
-  let bars
-  let currentStart, prevStart, prevEnd
+  let bars: RevenueBar[]
+  let currentStart: string, prevStart: string, prevEnd: string
 
   if (period === 'month') {
     // 按月内每天聚合（1~31）
@@ -62,7 +68,7 @@ export function getRevenue(artistId, period = 'month') {
       WHERE o.artist_id = ? AND o.${COMPLETED_ORDER_SQL}
         AND o.completed_at >= ? AND o.completed_at < ?
       GROUP BY day
-    `).all(artistId, currentStart, nextMonthStart)
+    `).all(artistId, currentStart, nextMonthStart) as Array<{ day: number; cents: number; cnt: number }>
 
     const dayMap = new Map(rows.map(r => [r.day, r]))
     bars = Array.from({ length: daysInMonth }, (_, i) => {
@@ -85,13 +91,13 @@ export function getRevenue(artistId, period = 'month') {
       FROM orders o
       WHERE o.artist_id = ? AND o.${COMPLETED_ORDER_SQL}
         AND o.completed_at >= ? AND o.completed_at < ?
-    `).all(artistId, currentStart, nextQuarterStart)
+    `).all(artistId, currentStart, nextQuarterStart) as Array<{ completed_at: string; cents: number }>
 
     const weekData = Array.from({ length: 13 }, () => ({ cents: 0, count: 0 }))
     const quarterStartDate = new Date(currentStart.replace(' ', 'T'))
     for (const row of rows) {
       const d = new Date(row.completed_at.replace(' ', 'T'))
-      const diffDays = Math.floor((d - quarterStartDate) / (7 * 24 * 60 * 60 * 1000))
+      const diffDays = Math.floor((d.getTime() - quarterStartDate.getTime()) / (7 * 24 * 60 * 60 * 1000))
       const week = Math.min(Math.max(diffDays, 0), 12)
       weekData[week].cents += row.cents
       weekData[week].count++
@@ -113,7 +119,7 @@ export function getRevenue(artistId, period = 'month') {
       WHERE o.artist_id = ? AND o.${COMPLETED_ORDER_SQL}
         AND o.completed_at >= ? AND o.completed_at < ?
       GROUP BY month
-    `).all(artistId, currentStart, nextYearStart)
+    `).all(artistId, currentStart, nextYearStart) as Array<{ month: number; cents: number; cnt: number }>
 
     const monthMap = new Map(rows.map(r => [r.month, r]))
     bars = Array.from({ length: 12 }, (_, i) => {
@@ -128,14 +134,14 @@ export function getRevenue(artistId, period = 'month') {
   const completedCount = bars.reduce((s, b) => s + b.count, 0)
 
   // 环比：上一周期同长度收入
-  let changePercent = null
+  let changePercent: number | null = null
   if (prevStart && prevEnd) {
     const prevRow = db.prepare(`
       SELECT COALESCE(SUM(${PRICE_FALLBACK_SQL}), 0) as cents
       FROM orders o
       WHERE o.artist_id = ? AND o.${COMPLETED_ORDER_SQL}
         AND o.completed_at >= ? AND o.completed_at < ?
-    `).get(artistId, prevStart, prevEnd)
+    `).get(artistId, prevStart, prevEnd) as { cents: number }
     const prevCents = prevRow.cents
     if (prevCents > 0) {
       changePercent = Math.round((totalCents - prevCents) / prevCents * 100)
@@ -151,12 +157,22 @@ export function getRevenue(artistId, period = 'month') {
 
 // ─── 合并待办列表 ───
 
+interface TodoOrder {
+  id: number
+  order_no: string
+  client_name: string | null
+  status: string
+  deadline: string | null
+  created_at: string
+  updated_at: string
+}
+
 /**
  * "现在要干什么"合并列表
  * 6 级排序：逾期 → 今日截稿 → pending → revision → confirmed/wip 有 deadline → 无 deadline
  * done 不算终态（done 后还有交付流程）
  */
-export function getTodoList(artistId) {
+export function getTodoList(artistId: number) {
   const now = new Date()
   const todayStart = localDayStartSqlite(now)
   const todayEnd = localDayEndSqlite(now)
@@ -169,15 +185,15 @@ export function getTodoList(artistId) {
     WHERE o.artist_id = ?
       AND o.status NOT IN ('delivered', 'cancelled')
     ORDER BY o.created_at DESC
-  `).all(artistId)
+  `).all(artistId) as TodoOrder[]
 
   // 分类 + 排序
-  const overdue = []     // 逾期：deadline < 今天零点
-  const dueToday = []    // 今日截稿：deadline >= 今天零点 AND < 明天零点
-  const pending = []     // pending 新单
-  const revision = []    // revision 修改中
-  const withDeadline = [] // confirmed/wip 有 deadline
-  const noDeadline = []   // confirmed/wip 无 deadline（含 done）
+  const overdue: TodoOrder[] = []     // 逾期：deadline < 今天零点
+  const dueToday: TodoOrder[] = []    // 今日截稿：deadline >= 今天零点 AND < 明天零点
+  const pending: TodoOrder[] = []     // pending 新单
+  const revision: TodoOrder[] = []    // revision 修改中
+  const withDeadline: TodoOrder[] = [] // confirmed/wip 有 deadline
+  const noDeadline: TodoOrder[] = []   // confirmed/wip 无 deadline（含 done）
 
   for (const o of orders) {
     if (o.deadline && o.deadline < todayStart) {
@@ -196,16 +212,16 @@ export function getTodoList(artistId) {
   }
 
   // 各组内排序
-  overdue.sort((a, b) => a.deadline.localeCompare(b.deadline))
-  dueToday.sort((a, b) => a.deadline.localeCompare(b.deadline))
+  overdue.sort((a, b) => a.deadline!.localeCompare(b.deadline!))
+  dueToday.sort((a, b) => a.deadline!.localeCompare(b.deadline!))
   pending.sort((a, b) => b.created_at.localeCompare(a.created_at))
   revision.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-  withDeadline.sort((a, b) => a.deadline.localeCompare(b.deadline))
+  withDeadline.sort((a, b) => a.deadline!.localeCompare(b.deadline!))
 
   const sorted = [...overdue, ...dueToday, ...pending, ...revision, ...withDeadline, ...noDeadline]
 
   // 映射标签
-  const TAG_MAP = {
+  const TAG_MAP: Record<string, string> = {
     overdue: '逾期',
     dueToday: '截稿',
     pending: '新单',
@@ -214,7 +230,7 @@ export function getTodoList(artistId) {
   }
 
   return sorted.map(o => {
-    let tag
+    let tag: string
     if (overdue.includes(o)) tag = TAG_MAP.overdue
     else if (dueToday.includes(o)) tag = TAG_MAP.dueToday
     else if (o.status === 'pending') tag = TAG_MAP.pending
@@ -239,7 +255,7 @@ export function getTodoList(artistId) {
  * 按 created_at DESC 取前 10 条
  * 返回：[{ id, orderNo, content, createdAt }]
  */
-export function getActivity(artistId, limit = 10) {
+export function getActivity(artistId: number, limit: number = 10) {
   const rows = db.prepare(`
     SELECT n.id, n.order_id, n.content, n.created_at, o.order_no
     FROM order_notes n
@@ -247,7 +263,7 @@ export function getActivity(artistId, limit = 10) {
     WHERE o.artist_id = ?
     ORDER BY n.created_at DESC
     LIMIT ?
-  `).all(artistId, limit)
+  `).all(artistId, limit) as Array<{ id: number; order_id: number; content: string; created_at: string; order_no: string }>
 
   return rows.map(n => ({
     id: n.id,

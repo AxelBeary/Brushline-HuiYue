@@ -1,6 +1,7 @@
 import db from '../../db/connection.js'
 import { AppError, E } from '../../shared/errors.js'
 import { getOrder } from './order.service.js'
+import type { WorkflowStage } from '../../types/entities.js'
 
 // ============================================
 // 订单流程服务（从 order.service.js 拆出，v0.16）
@@ -15,7 +16,7 @@ import { getOrder } from './order.service.js'
  *   中间节点 → wip
  *   最后一个节点 → done
  */
-export function mapStageToStatus(stages, stageId) {
+export function mapStageToStatus(stages: WorkflowStage[], stageId: number): string {
   const idx = stages.findIndex(s => s.id === stageId)
   if (idx === -1) return 'wip'
   if (idx === 0) return 'pending'
@@ -28,7 +29,7 @@ export function mapStageToStatus(stages, stageId) {
  * 推进流程节点（只能前进）
  * stageId=null 时关闭流程跟踪（回退旧模式）
  */
-export function advanceStage(orderId, stageId) {
+export function advanceStage(orderId: number, stageId: number | null): any {
   const order = getOrder(orderId)
   if (!order) throw new AppError(E.ORDER_NOT_FOUND)
 
@@ -42,7 +43,7 @@ export function advanceStage(orderId, stageId) {
   // 校验目标节点属于该画师
   const stages = db.prepare(
     'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
-  ).all(order.artist_id)
+  ).all(order.artist_id) as WorkflowStage[]
   const targetIdx = stages.findIndex(s => s.id === stageId)
   if (targetIdx === -1) throw new AppError(E.STAGE_NOT_FOUND)
 
@@ -75,7 +76,7 @@ export function advanceStage(orderId, stageId) {
  * 回退流程节点（打回修改）
  * 状态映射为 revision，记录系统备注
  */
-export function rollbackStage(orderId, stageId) {
+export function rollbackStage(orderId: number, stageId: number): any {
   const order = getOrder(orderId)
   if (!order) throw new AppError(E.ORDER_NOT_FOUND)
 
@@ -85,7 +86,7 @@ export function rollbackStage(orderId, stageId) {
 
   const stages = db.prepare(
     'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
-  ).all(order.artist_id)
+  ).all(order.artist_id) as WorkflowStage[]
   const targetIdx = stages.findIndex(s => s.id === stageId)
   const currentIdx = stages.findIndex(s => s.id === order.current_stage_id)
 
@@ -117,7 +118,7 @@ export function rollbackStage(orderId, stageId) {
  * 对无工作流订单设 current_stage_id = 画师工作流第一节点，status 保持不变
  * 为什么不能复用 advanceStage：advanceStage 对无跟踪订单会把 status 重置为 pending（状态倒退）
  */
-export function enableTracking(orderId) {
+export function enableTracking(orderId: number): any {
   const order = getOrder(orderId)
   if (!order) throw new AppError(E.ORDER_NOT_FOUND)
 
@@ -129,7 +130,7 @@ export function enableTracking(orderId) {
   // 画师无工作流模板 → 400
   const firstStage = db.prepare(
     'SELECT id FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC LIMIT 1'
-  ).get(order.artist_id)
+  ).get(order.artist_id) as { id: number } | undefined
   if (!firstStage) {
     throw new AppError(E.NO_WORKFLOW_TEMPLATE)
   }
@@ -144,12 +145,12 @@ export function enableTracking(orderId) {
 /**
  * 获取订单的流程进度信息（供路由层拼装响应）
  */
-export function getStageInfo(order) {
+export function getStageInfo(order: any): { currentStageId: number; currentStageName: string; stageProgress: { current: number; total: number } } | null {
   if (!order.current_stage_id) return null
 
   const stages = db.prepare(
     'SELECT * FROM artist_workflow_stages WHERE artist_id = ? ORDER BY sort_order ASC'
-  ).all(order.artist_id)
+  ).all(order.artist_id) as WorkflowStage[]
   const currentIdx = stages.findIndex(s => s.id === order.current_stage_id)
   if (currentIdx === -1) return null
 
@@ -163,7 +164,7 @@ export function getStageInfo(order) {
 // ─── plan-node-speech: 话术变量替换 + 客户沟通数据 ───
 
 /** 截稿日格式化为 X月X日（无则空串） */
-function formatDeadline(deadline) {
+function formatDeadline(deadline: string | null): string {
   if (!deadline) return ''
   const d = new Date(deadline.replace(' ', 'T'))
   if (isNaN(d.getTime())) return ''
@@ -171,7 +172,7 @@ function formatDeadline(deadline) {
 }
 
 /** 金额格式化（分 → ¥X 或 ¥X.XX） */
-function formatCentsYuan(cents) {
+function formatCentsYuan(cents: number | null): string {
   if (cents == null) return ''
   const yuan = cents / 100
   return Number.isInteger(yuan) ? `¥${yuan}` : `¥${yuan.toFixed(2)}`
@@ -181,19 +182,19 @@ function formatCentsYuan(cents) {
  * 替换话术模板中的 9 个变量
  * 无对应数据时替换为空字符串
  */
-export function replaceSpeechVars(template, order, stageName) {
+export function replaceSpeechVars(template: string | null, order: any, stageName: string | null): string {
   if (!template) return ''
 
   // 已付金额（paid 分期合计）
   const paidRow = db.prepare(
     "SELECT COALESCE(SUM(amount_cents), 0) as s FROM order_payment_installments WHERE order_id = ? AND status = 'paid'"
-  ).get(order.id)
+  ).get(order.id) as { s: number } | undefined
   const paidCents = paidRow?.s ?? 0
 
   const totalCents = order.final_price_cents ?? order.total_price_cents ?? null
   const unpaidCents = totalCents != null ? Math.max(0, totalCents - paidCents) : null
 
-  const vars = {
+  const vars: Record<string, string> = {
     '{客户名}': order.client_name || '',
     '{客户QQ}': order.client_qq || '',
     '{订单号}': order.order_no || '',
@@ -212,16 +213,25 @@ export function replaceSpeechVars(template, order, stageName) {
   return result
 }
 
+/** 话术 + 客户沟通数据返回类型 */
+interface SpeechInfoResult {
+  clientQq: string | null
+  totalPriceCents: number | null
+  paidCents: number
+  unpaidCents: number | null
+  speechText: string | null
+}
+
 /**
  * 获取订单的话术 + 客户沟通数据（供订单详情路由拼装）
  * 返回：{ speechText, clientQq, totalPriceCents, paidCents, unpaidCents }
  * 无 current_stage_id 时 speechText 为 null
  */
-export function getSpeechInfo(order) {
+export function getSpeechInfo(order: any): SpeechInfoResult {
   // 已付金额
   const paidRow = db.prepare(
     "SELECT COALESCE(SUM(amount_cents), 0) as s FROM order_payment_installments WHERE order_id = ? AND status = 'paid'"
-  ).get(order.id)
+  ).get(order.id) as { s: number } | undefined
   const paidCents = paidRow?.s ?? 0
 
   const totalCents = order.final_price_cents ?? order.total_price_cents ?? null
@@ -241,7 +251,7 @@ export function getSpeechInfo(order) {
 
   const stage = db.prepare(
     'SELECT name, speech_template FROM artist_workflow_stages WHERE id = ?'
-  ).get(order.current_stage_id)
+  ).get(order.current_stage_id) as { name: string; speech_template: string | null } | undefined
   if (!stage) {
     return { ...base, speechText: null }
   }

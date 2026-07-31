@@ -10,7 +10,7 @@ import { getOrder, compactQueue, tryAutoPromote } from './order.service.js'
 /**
  * 添加交付文件
  */
-export function addDeliverable(orderId, filePath, fileName, fileSize) {
+export function addDeliverable(orderId: number, filePath: string, fileName: string | null, fileSize: number | null): void {
   db.prepare('INSERT INTO deliverables (order_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)')
     .run(orderId, filePath, fileName || '交付文件', fileSize || 0)
 }
@@ -19,7 +19,7 @@ export function addDeliverable(orderId, filePath, fileName, fileSize) {
  * 交付订单（事务化）
  * 仅 wip/revision/done 状态允许上传交付文件
  */
-export function deliverOrder(orderId, filePath, fileName, fileSize) {
+export function deliverOrder(orderId: number, filePath: string, fileName: string | null, fileSize: number | null): any {
   return db.transaction(() => {
     const order = getOrder(orderId)
     if (!order) throw new AppError(E.ORDER_NOT_FOUND)
@@ -48,14 +48,14 @@ export function deliverOrder(orderId, filePath, fileName, fileSize) {
  * R18: source 区分来源（'client'/'artist'），20 张总量校验
  * ⚠️ 务必显式传 source 值，不要依赖 DEFAULT（显式传 NULL 会写成 null）
  */
-export function addReference(orderId, filePath, fileName, fileSize, source = 'client') {
+export function addReference(orderId: number, filePath: string, fileName: string | null, fileSize: number | null, source: string = 'client'): void {
   // BUG-3: 同图去重 — 同 order_id + file_path 不允许重复加入
   const dup = db.prepare('SELECT 1 FROM order_references WHERE order_id = ? AND file_path = ?').get(orderId, filePath)
   if (dup) {
     throw new AppError(E.REFERENCE_DUPLICATE, 409)
   }
   // R18: 订单生命周期总量限制 20 张
-  const count = db.prepare('SELECT COUNT(*) AS c FROM order_references WHERE order_id = ?').get(orderId).c
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM order_references WHERE order_id = ?').get(orderId) as { c: number }).c
   if (count >= 20) {
     throw new AppError(E.REFERENCES_LIMIT)
   }
@@ -72,7 +72,7 @@ const VALID_FOCUS_MODES = ['off', 'small', 'large']
  * 焦点图路径必须是该订单已有参考图之一（校验归属）
  * mode 为 'off' 时清空焦点图
  */
-export function setFocusImage(orderId, imagePath, mode) {
+export function setFocusImage(orderId: number, imagePath: string | null, mode: string): any {
   const order = getOrder(orderId)
   if (!order) throw new AppError(E.ORDER_NOT_FOUND)
 
@@ -97,15 +97,25 @@ export function setFocusImage(orderId, imagePath, mode) {
   return getOrder(orderId)
 }
 
+/** 参考图行 */
+interface ReferenceRow {
+  id: number
+  order_id: number
+  file_path: string
+  original_name: string | null
+  file_size: number | null
+  source: string | null
+}
+
 /**
  * 删除订单参考图
  * 删除时检查并清理焦点图字段
  */
-export function removeReference(orderId, referenceId) {
+export function removeReference(orderId: number, referenceId: number): any {
   const order = getOrder(orderId)
   if (!order) throw new AppError(E.ORDER_NOT_FOUND)
 
-  const ref = db.prepare('SELECT * FROM order_references WHERE id = ? AND order_id = ?').get(referenceId, orderId)
+  const ref = db.prepare('SELECT * FROM order_references WHERE id = ? AND order_id = ?').get(referenceId, orderId) as ReferenceRow | undefined
   if (!ref) throw new AppError(E.FOCUS_IMAGE_NOT_FOUND, 404)
 
   return db.transaction(() => {

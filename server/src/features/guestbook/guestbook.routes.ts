@@ -2,12 +2,14 @@ import { requireAuth, requireAdmin, getAdminQq } from '../../shared/middleware/a
 import { rateLimit } from '../../shared/middleware/rate-limit.js'
 import * as guestbookService from './guestbook.service.js'
 import * as artistService from '../artist/artist.service.js'
+import type { FastifyInstance } from 'fastify'
+import type { Artist } from '../../types/entities.js'
 
 // ============================================
 // 留言板路由（F4）
 // ============================================
 
-export default async function guestbookRoutes(fastify) {
+export default async function guestbookRoutes(fastify: FastifyInstance) {
 
   // ─── 公开接口 ───
 
@@ -29,22 +31,24 @@ export default async function guestbookRoutes(fastify) {
     if (!rateLimit(`guestbook:${request.ip}`, 2, 60_000)) {
       return reply.code(429).send({ code: 'RATE_LIMITED', error: '操作过于频繁，请稍后再试' })
     }
-    const artist = artistService.getArtistBySubdomain(request.params.subdomain)
+    const artist = artistService.getArtistBySubdomain((request.params as { subdomain: string }).subdomain) as Artist | undefined
     if (!artist || artist.qq_number === getAdminQq() || artist.status === 'hidden') {
       return reply.code(404).send({ error: '画师不存在' })
     }
-    const msg = guestbookService.createMessage(artist.id, request.body.nickname, request.body.content)
-    return reply.code(201).send({ id: msg.id })
+    const body = request.body as { nickname: string; content: string }
+    const msg = guestbookService.createMessage(artist.id, body.nickname, body.content)
+    return reply.code(201).send({ id: msg?.id })
   })
 
   /** GET /api/public/artist/:subdomain/messages — 已审核留言（分页） */
   fastify.get('/api/public/artist/:subdomain/messages', async (request, reply) => {
-    const artist = artistService.getArtistBySubdomain(request.params.subdomain)
+    const artist = artistService.getArtistBySubdomain((request.params as { subdomain: string }).subdomain) as Artist | undefined
     if (!artist || artist.qq_number === getAdminQq() || artist.status === 'hidden') {
       return reply.code(404).send({ error: '画师不存在' })
     }
-    const page = Math.max(parseInt(request.query.page) || 1, 1)
-    const pageSize = Math.min(Math.max(parseInt(request.query.pageSize) || 20, 1), 50)
+    const query = request.query as { page?: string; pageSize?: string }
+    const page = Math.max(parseInt(query.page) || 1, 1)
+    const pageSize = Math.min(Math.max(parseInt(query.pageSize) || 20, 1), 50)
     const result = guestbookService.getPublicMessages(artist.id, page, pageSize)
     return {
       messages: result.messages.map(m => ({
@@ -70,14 +74,14 @@ export default async function guestbookRoutes(fastify) {
 
   /** PUT /api/artist/messages/:id/approve — 通过 */
   fastify.put('/api/artist/messages/:id/approve', { preHandler: requireAuth }, async (request, reply) => {
-    const msg = guestbookService.approveMessage(request.artist.id, parseInt(request.params.id))
+    const msg = guestbookService.approveMessage(request.artist.id, parseInt((request.params as { id: string }).id))
     if (!msg) return reply.code(404).send({ error: '留言不存在' })
     return msg
   })
 
   /** PUT /api/artist/messages/:id/reject — 拒绝（静默） */
   fastify.put('/api/artist/messages/:id/reject', { preHandler: requireAuth }, async (request, reply) => {
-    const msg = guestbookService.rejectMessage(request.artist.id, parseInt(request.params.id))
+    const msg = guestbookService.rejectMessage(request.artist.id, parseInt((request.params as { id: string }).id))
     if (!msg) return reply.code(404).send({ error: '留言不存在' })
     return { success: true }
   })
@@ -96,7 +100,8 @@ export default async function guestbookRoutes(fastify) {
       }
     }
   }, async (request, reply) => {
-    const msg = guestbookService.replyMessage(request.artist.id, parseInt(request.params.id), request.body.reply)
+    const body = request.body as { reply: string }
+    const msg = guestbookService.replyMessage(request.artist.id, parseInt((request.params as { id: string }).id), body.reply)
     if (!msg) return reply.code(404).send({ error: '留言不存在' })
     return msg
   })
@@ -110,7 +115,7 @@ export default async function guestbookRoutes(fastify) {
 
   /** DELETE /api/admin/messages/:id — 管理员强制删除（软删除） */
   fastify.delete('/api/admin/messages/:id', { preHandler: requireAdmin }, async (request, reply) => {
-    const msg = guestbookService.adminDeleteMessage(parseInt(request.params.id))
+    const msg = guestbookService.adminDeleteMessage(parseInt((request.params as { id: string }).id))
     if (!msg) return reply.code(404).send({ error: '留言不存在' })
     return { success: true }
   })
