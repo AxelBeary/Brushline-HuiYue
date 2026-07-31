@@ -7,7 +7,7 @@ import crypto from 'crypto'
 
 const FILE_TTL_MS = 15 * 60 * 1000 // 签名有效期 15 分钟
 
-function getSecret() {
+function getSecret(): string {
   const secret = process.env.SESSION_SECRET
   // M-6 修复：生产环境必须显式设置密钥，否则 fail-fast（防止默认值上线）
   if (!secret && process.env.NODE_ENV === 'production') {
@@ -20,7 +20,7 @@ function getSecret() {
  * 为文件路径生成带时效的签名 token
  * 格式: base64url(payload).base64url(hmac)
  */
-export function signFilePath(filePath) {
+export function signFilePath(filePath: string): string {
   const expires = Date.now() + FILE_TTL_MS
   const payload = Buffer.from(JSON.stringify({ p: filePath, e: expires })).toString('base64url')
   const sig = crypto.createHmac('sha256', getSecret()).update(payload).digest('base64url')
@@ -31,7 +31,7 @@ export function signFilePath(filePath) {
  * 验证签名 token，返回文件路径或 null
  * 使用 timing-safe 比较防止时序攻击
  */
-export function verifyFileToken(token) {
+export function verifyFileToken(token: string | null | undefined): string | null {
   if (!token) return null
   const dotIdx = token.lastIndexOf('.')
   if (dotIdx === -1) return null
@@ -48,7 +48,7 @@ export function verifyFileToken(token) {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString())
     if (Date.now() > data.e) return null
-    return data.p
+    return data.p as string
   } catch {
     return null
   }
@@ -57,16 +57,16 @@ export function verifyFileToken(token) {
 /**
  * 生成带签名的完整 URL（用于 API 响应）
  */
-export function signedUrl(filePath) {
+export function signedUrl(filePath: string): string {
   return `/uploads/${filePath}?sig=${signFilePath(filePath)}`
 }
 
 /**
  * 判断路径是否为公开目录（无需签名）
  */
-export function isPublicUploadPath(urlPath) {
+export function isPublicUploadPath(urlPath: string): boolean {
   // C-1 修复：先解码再判断，防止 %2E%2E 等编码绕过前缀匹配
-  let decoded
+  let decoded: string
   try {
     decoded = decodeURIComponent(urlPath)
   } catch {
