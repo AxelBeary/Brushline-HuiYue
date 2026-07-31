@@ -198,6 +198,14 @@ export function deleteStage(artistId, stageId) {
     const final = findFinal(stages)
     if (final && final.id === stageId) throw new AppError(E.FINAL_CANNOT_DELETE)
 
+    // P1-5: 有活跃订单引用该节点时阻止删除
+    const activeCount = db.prepare(
+      "SELECT COUNT(*) as c FROM orders WHERE current_stage_id = ? AND status NOT IN ('delivered', 'cancelled')"
+    ).get(stageId).c
+    if (activeCount > 0) {
+      throw new AppError(E.STAGE_IN_USE, 400, { count: activeCount })
+    }
+
     // 收款节点：比例并入尾款
     if (stage.takes_payment && final) {
       db.prepare('UPDATE artist_workflow_stages SET basis_points = basis_points + ? WHERE id = ?')

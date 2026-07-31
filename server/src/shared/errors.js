@@ -166,7 +166,10 @@ export const E = {
   // 名额与缓冲（v0.17 SPEC-004）
   BATCH_FULL: 'BATCH_FULL',
   INVALID_BATCH_LIMIT: 'INVALID_BATCH_LIMIT',
-  NOT_BUFFER_ORDER: 'NOT_BUFFER_ORDER'
+  NOT_BUFFER_ORDER: 'NOT_BUFFER_ORDER',
+
+  // 流程（v0.19 P1-5）
+  STAGE_IN_USE: 'STAGE_IN_USE'
 }
 
 // ─── 错误码 → 中文用户友好消息 ───
@@ -319,5 +322,8 @@ export const ERROR_MESSAGES = {
   // 名额与缓冲（v0.17 SPEC-004）
   BATCH_FULL: '该画师已接满，暂时无法下单',
   INVALID_BATCH_LIMIT: '名额设置无效（正式位+缓冲位至少为1）',
-  NOT_BUFFER_ORDER: '该订单不在缓冲区'
+  NOT_BUFFER_ORDER: '该订单不在缓冲区',
+
+  // 流程（v0.19 P1-5）
+  STAGE_IN_USE: '该节点下有进行中的订单，请先完成或转移后再删除'
 }
