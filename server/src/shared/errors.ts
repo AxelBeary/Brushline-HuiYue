@@ -5,7 +5,11 @@
  * detail: 可选的上下文信息（如字段名、限制值）
  */
 export class AppError extends Error {
-  constructor(code, statusCode = 400, detail = null) {
+  code: string
+  statusCode: number
+  detail: unknown
+
+  constructor(code: string, statusCode: number = 400, detail: unknown = null) {
     super(code)
     this.code = code
     this.statusCode = statusCode
@@ -170,11 +174,11 @@ export const E = {
 
   // 流程（v0.19 P1-5）
   STAGE_IN_USE: 'STAGE_IN_USE'
-}
+} as const
 
 // ─── 错误码 → 中文用户友好消息 ───
 // 全局错误处理器优先查此表，未命中则回退到 error.message
-export const ERROR_MESSAGES = {
+export const ERROR_MESSAGES: Record<string, string> = {
   // 认证
   NOT_LOGGED_IN: '请先登录',
   SESSION_EXPIRED: '登录已过期，请重新登录',
