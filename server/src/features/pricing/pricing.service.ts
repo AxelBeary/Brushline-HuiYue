@@ -296,8 +296,9 @@ interface PublicPricing {
  * 返回：档位列表（各含适用增项）+ 倍率列表 + 分期比例
  */
 export function getPublicPricing(artistId: number): PublicPricing {
+  // v0.24 #10: 过滤 hidden 档位（showcase 保留，前端渲染灰色"暂不接单"）
   const tiers = db.prepare(
-    'SELECT * FROM price_tiers WHERE artist_id = ? ORDER BY sort_order ASC'
+    "SELECT * FROM price_tiers WHERE artist_id = ? AND visibility != 'hidden' ORDER BY sort_order ASC"
   ).all(artistId) as Array<Record<string, unknown> & { id: number }>
 
   const addons = db.prepare(
