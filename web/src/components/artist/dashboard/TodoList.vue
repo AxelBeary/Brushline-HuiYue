@@ -23,7 +23,7 @@
       <div
         v-for="item in items" :key="item.id"
         class="todo-item" :class="`todo-item--${item.tag}`"
-        @click="$router.push(`/orders/${item.id}`)"
+        @click="$router.push(`/orders/${item.id}?from=dashboard`)"
       >
         <el-tag :type="tagType(item.tag)" size="small" effect="dark" class="todo-tag">
           {{ $t(`dashboard.tag_${item.tag}`) }}
