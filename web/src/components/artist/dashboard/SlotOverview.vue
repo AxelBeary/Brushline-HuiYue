@@ -44,7 +44,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useArtistStore } from '../../../stores/artist.js'
-import { artistApi, artistPublicApi } from '../../../api/index.js'
+import { artistApi } from '../../../api/index.js'
 
 const store = useArtistStore()
 
@@ -55,8 +55,8 @@ const formalCount = ref(0)
 const bufferCount = ref(0)
 const nextBuffer = ref(null)
 const loadFailed = ref(false)
-/** 客户主页同款名额文案（后端 computeSlotDisplay，经公开 API 返回） */
-const slotDisplay = ref(null)
+/** 客户主页同款名额文案（PERF-1 后画师端 profile 已返回 slotDisplay，直接读取） */
+const slotDisplay = computed(() => store.profile?.slotDisplay ?? null)
 
 /** 名额限制是否开启（batch_limit 或 monthly_quota 任一非空） */
 const limitEnabled = computed(() =>
@@ -84,14 +84,6 @@ async function load() {
     formalCount.value = (formal || []).length
     bufferCount.value = (buffer || []).length
     nextBuffer.value = (buffer || [])[0] || null
-
-    // #4: slotDisplay 从公开主页 API 取（画师端 profile 不含该字段）
-    if (store.profile?.subdomain) {
-      try {
-        const pub = await artistPublicApi.getProfile(store.profile.subdomain)
-        slotDisplay.value = pub?.slotDisplay ?? null
-      } catch { slotDisplay.value = null } // 取不到 → 回退文案，不阻塞
-    }
   } catch {
     // 静默降级：不显示卡片，不阻塞其他模块
     loadFailed.value = true
