@@ -199,15 +199,17 @@ function syncAddonTiers(artistId: number, addonId: number, tierIds?: number[]): 
   const ins = db.prepare('INSERT OR IGNORE INTO addon_tiers (addon_id, tier_id) VALUES (?, ?)')
 
   const tx = db.transaction(() => {
-    del.run(addonId)
-    if (tierIds && tierIds.length > 0) {
-      for (const tid of tierIds) ins.run(addonId, tid)
-    } else {
-      // 未指定 → 关联所有档位
-      const allTiers = db.prepare('SELECT id FROM price_tiers WHERE artist_id = ?').all(artistId) as Array<{ id: number }>
-      for (const t of allTiers) ins.run(addonId, t.id)
-    }
-  })
+      del.run(addonId)
+      if (tierIds === undefined) {
+        // 未传 tierIds → 关联所有档位（向后兼容 createAddon 默认行为）
+        const allTiers = db.prepare('SELECT id FROM price_tiers WHERE artist_id = ?').all(artistId) as Array<{ id: number }>
+        for (const t of allTiers) ins.run(addonId, t.id)
+      } else if (tierIds.length > 0) {
+        // 指定了具体档位
+        for (const tid of tierIds) ins.run(addonId, tid)
+      }
+      // P2-#11: 空数组 → 不关联任何档位（用户明确移除所有关联）
+    })
   tx()
 }
 
@@ -368,8 +370,15 @@ export function calculatePrice(artistId: number, { tierId, addons = [], usageMul
     (db.prepare('SELECT addon_id FROM addon_tiers WHERE tier_id = ?').all(tierId) as Array<{ addon_id: number }>).map(r => r.addon_id)
   )
 
-  for (const sel of addons) {
-    const addon = db.prepare(
+  // P2-#12: 同一增项去重（防重复提交绕过 max_qty）
+    const seenAddonIds = new Set<number>()
+    for (const sel of addons) {
+      if (seenAddonIds.has(sel.addonId)) {
+        throw new AppError(E.VALIDATION, 400, { reason: `增项 ID ${sel.addonId} 重复提交` })
+      }
+      seenAddonIds.add(sel.addonId)
+
+      const addon = db.prepare(
       'SELECT * FROM price_addons WHERE id = ? AND artist_id = ? AND enabled = 1'
     ).get(sel.addonId, artistId) as Addon | undefined
     if (!addon) throw new AppError(E.ADDON_NOT_FOUND, 404, { addonId: sel.addonId })
