@@ -35,6 +35,7 @@
           :alt="activeTier.name"
           :preview-src-list="[imgUrl(activeTier.example_image)]"
           preview-teleported
+          hide-on-click-modal
         />
         <!-- 无示例图：显示档位说明文字（不留空白框） -->
         <div v-else class="tpl-tier-display-empty">
