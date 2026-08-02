@@ -291,6 +291,7 @@ interface PublicPricing {
   tiers: Array<Record<string, unknown> & { addons: Record<string, unknown>[] }>
   multipliers: Multiplier[]
   installments: Array<{ label: string; basisPoints: number }>
+  discountEnabled: boolean
 }
 
 /**
@@ -339,7 +340,9 @@ export function getPublicPricing(artistId: number): PublicPricing {
   return {
     tiers: tiersWithAddons,
     multipliers,
-    installments: stages.map(s => ({ label: s.name, basisPoints: s.basis_points }))
+    installments: stages.map(s => ({ label: s.name, basisPoints: s.basis_points })),
+    // v0.31 F3: 客户端据此决定是否显示折扣码输入框
+    discountEnabled: !!(db.prepare('SELECT discount_enabled FROM artists WHERE id = ?').get(artistId) as { discount_enabled: number } | undefined)?.discount_enabled
   }
 }
 
