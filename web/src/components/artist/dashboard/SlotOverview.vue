@@ -1,8 +1,8 @@
 <template>
-  <!-- 名额概览卡（#4 改版：slotDisplay 主文案 + 合并进度条 + 整卡点击跳接稿设置） -->
+  <!-- 名额概览卡（#4 改版：slotDisplay 主文案 + 合并进度条 + 整卡点击跳额度管理） -->
   <el-card
     v-if="visible" shadow="hover" class="slot-card"
-    @click="$router.push('/settings?tab=commission')"
+    @click="$router.push('/slots')"
   >
     <template #header>
       <div class="slot-header">
