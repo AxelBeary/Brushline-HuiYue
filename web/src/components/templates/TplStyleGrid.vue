@@ -26,9 +26,12 @@
         <el-image
           v-if="activeStyle.cover_image"
           :src="imgUrl(activeStyle.cover_image)"
-          fit="cover"
+          fit="contain"
           class="tpl-style-display-img"
           :alt="activeStyle.name"
+          :preview-src-list="[imgUrl(activeStyle.cover_image)]"
+          preview-teleported
+          hide-on-click-modal
         />
         <!-- 信息区 -->
         <div class="tpl-style-display-info">
@@ -38,14 +41,21 @@
           <p v-if="activeStyle.description" class="tpl-style-display-desc">{{ activeStyle.description }}</p>
           <!-- 尺寸价格列表 -->
           <div class="tpl-style-sizes">
-            <div v-for="sz in activeStyle.sizes" :key="sz.id" class="tpl-style-size-row">
+            <button
+              v-for="sz in activeStyle.sizes" :key="sz.id"
+              class="tpl-style-size-row"
+              :class="{ 'tpl-style-size-row--active': sz.id === selectedSizeId }"
+              @click="toggleSize(sz.id)"
+            >
               <span class="tpl-style-size-name">{{ sz.name }}</span>
               <span class="tpl-style-size-price">¥{{ sz.base_price }}</span>
-            </div>
+              <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
+            </button>
           </div>
           <button class="tpl-style-order-btn" @click="goOrder()">
             {{ $t('artistHome.styleOrderBtn') }}
           </button>
+          <p v-if="orderHint" class="tpl-style-order-hint">{{ orderHint }}</p>
         </div>
       </template>
     </div>
@@ -56,27 +66,38 @@
     <div v-if="singleStyle.cover_image" class="tpl-style-single-cover">
       <el-image
         :src="imgUrl(singleStyle.cover_image)"
-        fit="cover"
+        fit="contain"
         class="tpl-style-single-img"
         :alt="singleStyle.name"
+        :preview-src-list="[imgUrl(singleStyle.cover_image)]"
+        preview-teleported
+        hide-on-click-modal
       />
     </div>
     <p v-if="singleStyle.description" class="tpl-style-single-desc">{{ singleStyle.description }}</p>
     <div class="tpl-style-sizes">
-      <div v-for="sz in singleStyle.sizes" :key="sz.id" class="tpl-style-size-row">
+      <button
+        v-for="sz in singleStyle.sizes" :key="sz.id"
+        class="tpl-style-size-row"
+        :class="{ 'tpl-style-size-row--active': sz.id === selectedSizeId }"
+        @click="toggleSize(sz.id)"
+      >
         <span class="tpl-style-size-name">{{ sz.name }}</span>
         <span class="tpl-style-size-price">¥{{ sz.base_price }}</span>
-      </div>
+        <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
+      </button>
     </div>
     <button class="tpl-style-order-btn" @click="goOrder()">
       {{ $t('artistHome.styleOrderBtn') }}
     </button>
+    <p v-if="orderHint" class="tpl-style-order-hint tpl-style-order-hint--single">{{ orderHint }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useArtistData } from '../../composables/useArtistData.js'
 
 const props = defineProps({
@@ -88,10 +109,33 @@ const props = defineProps({
 
 const { imgUrl } = useArtistData(props)
 const router = useRouter()
+const { t } = useI18n()
 
 const activeIndex = ref(0)
 const activeStyle = computed(() => props.styles[activeIndex.value] || null)
 const singleStyle = computed(() => props.styles[0] || null)
+
+/** v0.34 任务B：当前展示柜已选尺寸（点选高亮，再点取消；切换画风/滑动切换时清空） */
+const selectedSizeId = ref(null)
+
+/** 尺寸行点击：选中/取消选择（toggle） */
+function toggleSize(sizeId) {
+  selectedSizeId.value = selectedSizeId.value === sizeId ? null : sizeId
+}
+
+/** v0.34 任务B：点击尺寸行后出现下单按钮提示，引导跳转预选 */
+const orderHint = computed(() => {
+  if (selectedSizeId.value == null) return ''
+  const list = (activeStyle.value?.sizes || [])
+  const size = list.find(sz => sz.id === selectedSizeId.value)
+  if (!size) return ''
+  return t('artistHome.styleSizeHint', { size: size.name, price: size.base_price })
+})
+
+/** v0.34 任务B：切换画风（菜单/滑动）→ 清空尺寸选择（尺寸列表随画风变） */
+function onStyleChange() {
+  selectedSizeId.value = null
+}
 
 /** 起步价标签（¥最低尺寸基础价起） */
 function fromLabel(style) {
@@ -110,14 +154,20 @@ function onTouchEnd(e) {
   if (Math.abs(deltaX) < 50) return // 阈值 50px，防误触
   if (deltaX < 0 && activeIndex.value < props.styles.length - 1) {
     activeIndex.value++ // 左滑 → 下一个
+    onStyleChange()
   } else if (deltaX > 0 && activeIndex.value > 0) {
     activeIndex.value-- // 右滑 → 上一个
+    onStyleChange()
   }
 }
 
-/** 跳转下单流程（OrderForm 三步走，客户端自行选画风/尺寸） */
+/** v0.34 任务B：跳转下单流程，带画风/尺寸 query（OrderForm 读 query 预选） */
 function goOrder() {
-  router.push(`/artist/${props.subdomain}/order`)
+  const query = {}
+  const style = activeStyle.value || singleStyle.value
+  if (style) query.styleId = style.id
+  if (selectedSizeId.value != null) query.sizeId = selectedSizeId.value
+  router.push({ path: `/artist/${props.subdomain}/order`, query })
 }
 </script>
 
@@ -125,7 +175,7 @@ function goOrder() {
 /* ─── 多画风展示柜：布局与 TplTierGrid 一致（左菜单 + 右展示），全部设计系统变量 ─── */
 .tpl-style-showcase {
   display: flex;
-  gap: 20px;
+  gap: 16px; /* v0.34 任务G：左菜单与右展示柜高度差过大时收紧 */
   align-items: flex-start;
 }
 
@@ -142,7 +192,7 @@ function goOrder() {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 12px 14px;
+  padding: 10px 12px; /* v0.34 任务G：菜单项收紧，减少左菜单下方空白感 */
   border: 1px solid var(--pal-border);
   border-radius: 10px;
   background: var(--pal-surface);
@@ -183,11 +233,12 @@ function goOrder() {
 }
 .tpl-style-display-img {
   width: 100%;
-  height: 220px;
+  height: auto;
   display: block;
+  cursor: zoom-in;
 }
 .tpl-style-display-info {
-  padding: 20px 22px 24px;
+  padding: 18px 20px 22px; /* v0.34 任务G：信息区收紧 */
 }
 .tpl-style-display-head {
   display: flex;
@@ -217,14 +268,34 @@ function goOrder() {
   gap: 6px;
   margin-bottom: 4px;
 }
+/* v0.34 任务B：尺寸行可点击选择（button 元素，选中高亮复用菜单 active 语言） */
 .tpl-style-size-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
+  width: 100%;
   border: 1px solid var(--pal-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-primary) 4%, var(--pal-surface));
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: all 0.2s;
+}
+.tpl-style-size-row:hover {
+  border-color: var(--color-primary);
+}
+.tpl-style-size-row--active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--pal-surface));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+.tpl-style-size-check {
+  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 13px;
+  margin-left: 8px;
 }
 .tpl-style-size-name {
   font-size: 14px;
@@ -257,6 +328,17 @@ function goOrder() {
   opacity: 0.88;
   transform: translateY(-1px);
 }
+/* v0.34 任务B：选中尺寸后的下单引导提示 */
+.tpl-style-order-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pal-text-dim);
+}
+.tpl-style-order-hint--single {
+  margin-left: 22px;
+  margin-right: 22px;
+}
 
 /* ─── 单画风退化：纯尺寸列表（无"选画风"概念） ─── */
 .tpl-style-single {
@@ -268,8 +350,9 @@ function goOrder() {
 }
 .tpl-style-single-img {
   width: 100%;
-  height: 200px;
+  height: auto;
   display: block;
+  cursor: zoom-in;
 }
 .tpl-style-single-desc {
   font-size: 13px;
