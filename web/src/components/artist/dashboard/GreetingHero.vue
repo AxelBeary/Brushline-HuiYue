@@ -6,7 +6,6 @@
       @click="fetchGreeting" @keydown.enter="fetchGreeting" @keydown.space.prevent="fetchGreeting"
     >
       <div class="greeting-main">
-        <span class="greeting-icon">{{ slotIcon }}</span>
         <Transition name="greeting-fade" mode="out-in">
           <h2 class="greeting-text font-display" :key="greeting.text">{{ greeting.text }}</h2>
         </Transition>
@@ -37,9 +36,6 @@ const { t, locale } = useI18n()
 // ─── 问候语 ───
 const greeting = ref({ text: '', slot: 'any' })
 const greetingLoading = ref(false)
-
-const SLOT_ICONS = { morning: '☀️', afternoon: '🌤️', evening: '🌆', night: '🌙', any: '🎨' }
-const slotIcon = computed(() => SLOT_ICONS[greeting.value.slot] || '🎨')
 
 const dateLine = computed(() => {
   const now = new Date()

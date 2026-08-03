@@ -2,7 +2,7 @@
   <div class="multiplier-manager" v-loading="loading">
     <!-- 用途倍率 -->
     <div class="m-group">
-      <h4 class="group-title">📋 用途倍率 <span class="group-hint">多个同时选中时取最高</span></h4>
+      <h4 class="group-title">用途倍率 <span class="group-hint">多个同时选中时取最高</span></h4>
       <div v-for="m in usageList" :key="m.id" class="m-row">
         <span class="m-name">{{ m.name }}</span>
         <span class="m-value">×{{ m.multiplier }}</span>
@@ -20,7 +20,7 @@
 
     <!-- 加急倍率 -->
     <div class="m-group">
-      <h4 class="group-title">⚡ 加急倍率 <span class="group-hint">与用途倍率相乘叠加</span></h4>
+      <h4 class="group-title">加急倍率 <span class="group-hint">与用途倍率相乘叠加</span></h4>
       <div v-for="m in rushList" :key="m.id" class="m-row">
         <span class="m-name">{{ m.name }}</span>
         <span class="m-value">×{{ m.multiplier }}</span>
