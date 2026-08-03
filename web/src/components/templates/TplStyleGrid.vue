@@ -112,16 +112,14 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-// v0.35 F3: resolveSizeImagePath 尺寸图解析纯函数（image_artwork_id > image > 封面兜底由 displayImageUrl 处理）
+// v0.35 联调：resolveSizeImagePath 尺寸图解析纯函数（artwork_image_path > image > 封面兜底由 displayImageUrl 处理）
 import { useArtistData, resolveSizeImagePath } from '../../composables/useArtistData.js'
 
 const props = defineProps({
   /** 画风列表（GET /api/public/styles/:subdomain，只含 is_active=1，按 sort_order 排序） */
   styles: { type: Array, default: () => [] },
   /** 画师子域名（跳转下单用） */
-  subdomain: { type: String, default: '' },
-  /** v0.35 F3: 作品列表（尺寸 image_artwork_id 解析成作品图路径用） */
-  artworks: { type: Array, default: () => [] }
+  subdomain: { type: String, default: '' }
 })
 
 const { imgUrl } = useArtistData(props)
@@ -142,11 +140,11 @@ const selectedSize = computed(() =>
 )
 
 /**
- * v0.35 F3: 大图 URL——选中尺寸有图→尺寸图（image_artwork_id 引用作品图 > image 独立上传）；
+ * v0.35 F3: 大图 URL——选中尺寸有图→尺寸图（artwork_image_path 引用作品实时路径 > image 独立上传）；
  * 未选尺寸/尺寸无图→画风封面兜底，不留空白。
  */
 const displayImageUrl = computed(() => {
-  const sizePath = resolveSizeImagePath(selectedSize.value, props.artworks)
+  const sizePath = resolveSizeImagePath(selectedSize.value)
   return imgUrl(sizePath || currentStyle.value?.cover_image || '')
 })
 
