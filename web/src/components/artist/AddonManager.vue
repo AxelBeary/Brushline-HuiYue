@@ -3,7 +3,7 @@
     <div class="addon-columns">
       <!-- 左列：增项库 -->
       <div class="addon-library">
-        <h4 class="col-title">📦 增项库</h4>
+        <h4 class="col-title">增项库</h4>
         <draggable
           v-model="addons"
           item-key="id"
@@ -43,7 +43,7 @@
 
       <!-- 右列：档位货架 -->
       <div class="tier-shelf">
-        <h4 class="col-title">🏪 档位货架 <span class="col-hint">拖增项到档位上关联</span></h4>
+        <h4 class="col-title">档位货架 <span class="col-hint">拖增项到档位上关联</span></h4>
         <div v-for="tier in tiers" :key="tier.id" class="tier-slot">
           <div class="tier-header">
             <span class="tier-name">{{ tier.name }}</span>
@@ -131,11 +131,11 @@ const editingAddon = ref(null)
 const newName = ref('')
 
 const categories = [
-  { value: 'expression', label: '🎭 表情差分' },
-  { value: 'outfit', label: '👗 服装替换' },
-  { value: 'background', label: '🏞 背景场景' },
-  { value: 'weapon', label: '⚔️ 武器道具' },
-  { value: 'other', label: '✨ 其他' }
+  { value: 'expression', label: '表情差分' },
+  { value: 'outfit', label: '服装替换' },
+  { value: 'background', label: '背景场景' },
+  { value: 'weapon', label: '武器道具' },
+  { value: 'other', label: '其他' }
 ]
 
 const editForm = ref({
