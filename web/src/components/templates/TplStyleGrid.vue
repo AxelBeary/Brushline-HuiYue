@@ -22,23 +22,30 @@
       @touchend.passive="onTouchEnd"
     >
       <template v-if="activeStyle">
-        <!-- 封面图 -->
-        <el-image
-          v-if="activeStyle.cover_image"
-          :src="imgUrl(activeStyle.cover_image)"
-          fit="contain"
-          class="tpl-style-display-img"
-          :alt="activeStyle.name"
-          :preview-src-list="[imgUrl(activeStyle.cover_image)]"
-          preview-teleported
-          hide-on-click-modal
-        />
+        <!-- v0.35 F3: 大图 = 选中尺寸图（有图）→ 画风封面兜底（未选/尺寸无图），切换带淡入淡出 -->
+        <Transition name="tpl-style-img-fade" mode="out-in">
+          <el-image
+            v-if="displayImageUrl"
+            :key="displayImageUrl"
+            :src="displayImageUrl"
+            fit="contain"
+            class="tpl-style-display-img"
+            :alt="activeStyle.name"
+            :preview-src-list="[displayImageUrl]"
+            preview-teleported
+            hide-on-click-modal
+          />
+        </Transition>
         <!-- 信息区 -->
         <div class="tpl-style-display-info">
           <div class="tpl-style-display-head">
             <h3 class="tpl-style-display-name">{{ activeStyle.name }}</h3>
           </div>
-          <p v-if="activeStyle.description" class="tpl-style-display-desc">{{ activeStyle.description }}</p>
+          <!-- v0.35 F3: 选中带描述尺寸 → 尺寸描述+天数；未选中 → 画风描述 -->
+          <p v-if="displayDesc" class="tpl-style-display-desc">{{ displayDesc }}</p>
+          <p v-if="displayWorkDays != null" class="tpl-style-display-days">
+            {{ $t('artistHome.aboutDays', { n: displayWorkDays }) }}
+          </p>
           <!-- 尺寸价格列表 -->
           <div class="tpl-style-sizes">
             <button
@@ -63,18 +70,25 @@
 
   <!-- ── 单画风退化：只显示尺寸列表，不显示"选画风"概念（与 OrderForm 退化逻辑一致） ── -->
   <div v-else-if="styles.length === 1" class="tpl-style-single">
-    <div v-if="singleStyle.cover_image" class="tpl-style-single-cover">
-      <el-image
-        :src="imgUrl(singleStyle.cover_image)"
-        fit="contain"
-        class="tpl-style-single-img"
-        :alt="singleStyle.name"
-        :preview-src-list="[imgUrl(singleStyle.cover_image)]"
-        preview-teleported
-        hide-on-click-modal
-      />
+    <!-- v0.35 F3: 与多画风一致的切图逻辑（选中尺寸图 → 封面兜底） -->
+    <div v-if="displayImageUrl" class="tpl-style-single-cover">
+      <Transition name="tpl-style-img-fade" mode="out-in">
+        <el-image
+          :key="displayImageUrl"
+          :src="displayImageUrl"
+          fit="contain"
+          class="tpl-style-single-img"
+          :alt="singleStyle.name"
+          :preview-src-list="[displayImageUrl]"
+          preview-teleported
+          hide-on-click-modal
+        />
+      </Transition>
     </div>
-    <p v-if="singleStyle.description" class="tpl-style-single-desc">{{ singleStyle.description }}</p>
+    <p v-if="displayDesc" class="tpl-style-single-desc">{{ displayDesc }}</p>
+    <p v-if="displayWorkDays != null" class="tpl-style-single-days">
+      {{ $t('artistHome.aboutDays', { n: displayWorkDays }) }}
+    </p>
     <div class="tpl-style-sizes">
       <button
         v-for="sz in singleStyle.sizes" :key="sz.id"
@@ -98,13 +112,16 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useArtistData } from '../../composables/useArtistData.js'
+// v0.35 F3: resolveSizeImagePath 尺寸图解析纯函数（image_artwork_id > image > 封面兜底由 displayImageUrl 处理）
+import { useArtistData, resolveSizeImagePath } from '../../composables/useArtistData.js'
 
 const props = defineProps({
   /** 画风列表（GET /api/public/styles/:subdomain，只含 is_active=1，按 sort_order 排序） */
   styles: { type: Array, default: () => [] },
   /** 画师子域名（跳转下单用） */
-  subdomain: { type: String, default: '' }
+  subdomain: { type: String, default: '' },
+  /** v0.35 F3: 作品列表（尺寸 image_artwork_id 解析成作品图路径用） */
+  artworks: { type: Array, default: () => [] }
 })
 
 const { imgUrl } = useArtistData(props)
@@ -117,6 +134,27 @@ const singleStyle = computed(() => props.styles[0] || null)
 
 /** v0.34 任务B：当前展示柜已选尺寸（点选高亮，再点取消；切换画风/滑动切换时清空） */
 const selectedSizeId = ref(null)
+
+/** v0.35 F3: 当前选中尺寸对象（多画风=activeStyle 下；单画风=singleStyle 下） */
+const currentStyle = computed(() => (props.styles.length > 1 ? activeStyle.value : singleStyle.value))
+const selectedSize = computed(() =>
+  (currentStyle.value?.sizes || []).find(sz => sz.id === selectedSizeId.value) || null
+)
+
+/**
+ * v0.35 F3: 大图 URL——选中尺寸有图→尺寸图（image_artwork_id 引用作品图 > image 独立上传）；
+ * 未选尺寸/尺寸无图→画风封面兜底，不留空白。
+ */
+const displayImageUrl = computed(() => {
+  const sizePath = resolveSizeImagePath(selectedSize.value, props.artworks)
+  return imgUrl(sizePath || currentStyle.value?.cover_image || '')
+})
+
+/** v0.35 F3: 描述联动——选中带描述尺寸→尺寸描述；否则→画风描述 */
+const displayDesc = computed(() => selectedSize.value?.description || currentStyle.value?.description || '')
+
+/** v0.35 F3: 工作天数联动——仅选中尺寸带天数时显示 */
+const displayWorkDays = computed(() => selectedSize.value?.work_days ?? null)
 
 /** 尺寸行点击：选中/取消选择（toggle） */
 function toggleSize(sizeId) {
@@ -260,6 +298,21 @@ function goOrder() {
   color: var(--pal-text-dim);
   margin: 0 0 12px;
 }
+/* v0.35 F3: 尺寸工作天数（选中尺寸带 work_days 时显示） */
+.tpl-style-display-days {
+  font-size: 12px;
+  color: var(--pal-text-dim);
+  margin: -6px 0 12px;
+}
+/* v0.35 F3: 大图切换淡入淡出（共享逻辑，各模板可覆盖时长） */
+.tpl-style-img-fade-enter-active,
+.tpl-style-img-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.tpl-style-img-fade-enter-from,
+.tpl-style-img-fade-leave-to {
+  opacity: 0;
+}
 
 /* 尺寸价格列表（多画风/单画风共用） */
 .tpl-style-sizes {
@@ -359,6 +412,12 @@ function goOrder() {
   line-height: 1.6;
   color: var(--pal-text-dim);
   margin: 16px 22px 12px;
+}
+/* v0.35 F3: 单画风尺寸天数 */
+.tpl-style-single-days {
+  font-size: 12px;
+  color: var(--pal-text-dim);
+  margin: -6px 22px 12px;
 }
 .tpl-style-single .tpl-style-sizes {
   margin: 0 22px;
