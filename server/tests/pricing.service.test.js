@@ -20,6 +20,24 @@ function seedWorkflowStages(artistId) {
   ins.run(artistId, '尾款', 2, 7000)
 }
 
+/**
+ * 直接 SQL 插入增项（v0.36 C-1：旧增项 CRUD 服务函数已删除）。
+ * tierIds 省略时关联该画师全部档位（对齐旧 createAddon 默认行为）。
+ */
+function seedAddon(artistId, { category = 'other', name, priceType = 'fixed', priceValue, selectMode = 'quantity', maxQty = 5, enabled = 1, tierIds }) {
+  const sortOrder = db.prepare(
+    'SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM price_addons WHERE artist_id = ?'
+  ).get(artistId).n
+  const r = db.prepare(
+    'INSERT INTO price_addons (artist_id, category, name, price_type, price_value, select_mode, max_qty, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(artistId, category, name, priceType, priceValue, selectMode, maxQty, enabled, sortOrder)
+  const addonId = Number(r.lastInsertRowid)
+  const targets = tierIds ?? db.prepare('SELECT id FROM price_tiers WHERE artist_id = ?').all(artistId).map(x => x.id)
+  const link = db.prepare('INSERT INTO addon_tiers (addon_id, tier_id) VALUES (?, ?)')
+  for (const tid of targets) link.run(addonId, tid)
+  return db.prepare('SELECT * FROM price_addons WHERE id = ?').get(addonId)
+}
+
 describe('价格计算器服务 (Pricing Service)', () => {
   let artist, tier
 
@@ -28,112 +46,6 @@ describe('价格计算器服务 (Pricing Service)', () => {
     artist = seedArtist({ qq_number: '11111', subdomain: 'alice' })
     tier = seedTier(artist.id, '全身像', 200)
     seedWorkflowStages(artist.id)
-  })
-
-  // ─── 增项 CRUD ───
-
-  describe('增项 CRUD', () => {
-    it('TC-P-01: 创建增项 — 默认关联所有档位', () => {
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'expression',
-        name: '表情差分',
-        priceType: 'fixed',
-        priceValue: 15
-      })
-
-      expect(addon.name).toBe('表情差分')
-      expect(addon.price_type).toBe('fixed')
-      expect(addon.price_value).toBe(15)
-      expect(addon.select_mode).toBe('quantity')
-      expect(addon.tierIds).toContain(tier.id)
-    })
-
-    it('TC-P-02: 创建增项 — 指定关联档位', () => {
-      const tier2 = seedTier(artist.id, '头像', 50, 2)
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'background',
-        name: '复杂背景',
-        priceValue: 80,
-        tierIds: [tier2.id]
-      })
-
-      expect(addon.tierIds).toEqual([tier2.id])
-      expect(addon.tierIds).not.toContain(tier.id)
-    })
-
-    it('TC-P-03: 创建增项 — 名称为空拒绝', () => {
-      expect(() => {
-        pricingService.createAddon(artist.id, { category: 'other', name: '', priceValue: 10 })
-      }).toThrow('ADDON_NAME_EMPTY')
-    })
-
-    it('TC-P-04: 创建增项 — 无效分类拒绝', () => {
-      expect(() => {
-        pricingService.createAddon(artist.id, { category: 'invalid', name: 'X', priceValue: 10 })
-      }).toThrow('VALIDATION')
-    })
-
-    it('TC-P-05: 更新增项', () => {
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'weapon', name: '武器', priceValue: 50
-      })
-      const updated = pricingService.updateAddon(artist.id, addon.id, {
-        name: '大型武器', priceValue: 100
-      })
-
-      expect(updated.name).toBe('大型武器')
-      expect(updated.price_value).toBe(100)
-    })
-
-    it('TC-P-06: 删除增项', () => {
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'other', name: '临时', priceValue: 5
-      })
-      pricingService.deleteAddon(artist.id, addon.id)
-
-      expect(() => pricingService.getAddon(artist.id, addon.id)).toThrow('ADDON_NOT_FOUND')
-    })
-
-    it('TC-P-07: 增项排序', () => {
-      const a1 = pricingService.createAddon(artist.id, { category: 'expression', name: 'A', priceValue: 10 })
-      const a2 = pricingService.createAddon(artist.id, { category: 'outfit', name: 'B', priceValue: 20 })
-      const a3 = pricingService.createAddon(artist.id, { category: 'background', name: 'C', priceValue: 30 })
-
-      const reordered = pricingService.reorderAddons(artist.id, [a3.id, a1.id, a2.id])
-      expect(reordered.map(a => a.name)).toEqual(['C', 'A', 'B'])
-    })
-
-    it('TC-P-08: 排序长度不匹配拒绝', () => {
-      pricingService.createAddon(artist.id, { category: 'other', name: 'A', priceValue: 10 })
-      pricingService.createAddon(artist.id, { category: 'other', name: 'B', priceValue: 20 })
-
-      expect(() => {
-        pricingService.reorderAddons(artist.id, [1])
-      }).toThrow('REORDER_LENGTH')
-    })
-
-    it('TC-P-09: 更新档位关联', () => {
-      const tier2 = seedTier(artist.id, '头像', 50, 2)
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'expression', name: '表情', priceValue: 15
-      })
-
-      // 默认关联所有 → 改为只关联 tier2
-      const updated = pricingService.updateAddonTiers(artist.id, addon.id, [tier2.id])
-      expect(updated.tierIds).toEqual([tier2.id])
-    })
-
-    it('TC-P-10: 关联不属于自己的档位拒绝', () => {
-      const other = seedArtist({ qq_number: '22222', subdomain: 'bob' })
-      const otherTier = seedTier(other.id, '别人的', 100)
-      const addon = pricingService.createAddon(artist.id, {
-        category: 'other', name: 'X', priceValue: 10
-      })
-
-      expect(() => {
-        pricingService.updateAddonTiers(artist.id, addon.id, [otherTier.id])
-      }).toThrow('TIER_NOT_FOUND')
-    })
   })
 
   // ─── 倍率 CRUD ───
@@ -192,7 +104,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-16: 固定增项', () => {
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'background', name: '复杂背景', priceType: 'fixed', priceValue: 80
       })
 
@@ -208,10 +120,10 @@ describe('价格计算器服务 (Pricing Service)', () => {
 
     it('TC-P-17: 百分比增项基于基础价（不是小计）', () => {
       // 固定增项 80 + 百分比增项 40%
-      const fixed = pricingService.createAddon(artist.id, {
+      const fixed = seedAddon(artist.id, {
         category: 'background', name: '复杂背景', priceType: 'fixed', priceValue: 80
       })
-      const pct = pricingService.createAddon(artist.id, {
+      const pct = seedAddon(artist.id, {
         category: 'expression', name: '差分表情', priceType: 'percent', priceValue: 0.4,
         selectMode: 'toggle'
       })
@@ -231,7 +143,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-18: 数量增项', () => {
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'expression', name: '表情差分', priceType: 'fixed', priceValue: 15, maxQty: 5
       })
 
@@ -247,7 +159,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-19: 超出最大数量拒绝', () => {
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'expression', name: '表情', priceValue: 15, maxQty: 3
       })
 
@@ -260,7 +172,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-20: inquiry 模式不计价', () => {
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'other', name: '定制挂件', priceValue: 0, selectMode: 'inquiry'
       })
 
@@ -277,7 +189,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
 
     it('TC-P-21: 增项不适用于当前档位拒绝', () => {
       const tier2 = seedTier(artist.id, '头像', 50, 2)
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'weapon', name: '武器', priceValue: 50, tierIds: [tier2.id]
       })
 
@@ -338,10 +250,10 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-25: 完整场景 — 基础+增项+倍率+分期', () => {
-      const addon1 = pricingService.createAddon(artist.id, {
+      const addon1 = seedAddon(artist.id, {
         category: 'expression', name: '表情差分', priceType: 'fixed', priceValue: 15
       })
-      const addon2 = pricingService.createAddon(artist.id, {
+      const addon2 = seedAddon(artist.id, {
         category: 'background', name: '复杂背景', priceType: 'percent', priceValue: 0.4,
         selectMode: 'toggle'
       })
@@ -382,10 +294,10 @@ describe('价格计算器服务 (Pricing Service)', () => {
     })
 
     it('TC-P-27: 禁用的增项不可选', () => {
-      const addon = pricingService.createAddon(artist.id, {
+      const addon = seedAddon(artist.id, {
         category: 'other', name: '已下架', priceValue: 10
       })
-      pricingService.updateAddon(artist.id, addon.id, { enabled: false })
+      db.prepare('UPDATE price_addons SET enabled = 0 WHERE id = ?').run(addon.id)
 
       expect(() => {
         pricingService.calculatePrice(artist.id, {
@@ -415,7 +327,7 @@ describe('价格计算器服务 (Pricing Service)', () => {
   describe('公开报价', () => {
     it('TC-P-29: 获取完整报价结构', () => {
       seedTier(artist.id, '头像', 50, 2)
-      pricingService.createAddon(artist.id, {
+      seedAddon(artist.id, {
         category: 'expression', name: '表情差分', priceValue: 15
       })
       pricingService.createMultiplier(artist.id, {
