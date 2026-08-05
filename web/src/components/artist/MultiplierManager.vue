@@ -139,15 +139,17 @@ onMounted(async () => {
 
 <style scoped>
 .m-group { margin-bottom: 28px; }
-.group-title { font-size: 15px; font-weight: 700; margin: 0 0 12px; color: var(--text-primary); }
-.group-hint { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
+/* v0.38 第二批: 纸墨 token（REQ-026） */
+.group-title { font-size: 15px; font-weight: 700; margin: 0 0 12px; color: var(--ink); }
+.group-hint { font-size: 11px; font-weight: 400; color: var(--ink3); margin-left: 8px; }
 .m-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;
-  background: var(--bg-card); border: 1px solid var(--border-color);
+  padding: 10px 12px; border-radius: var(--r-m); margin-bottom: 6px;
+  background: var(--card); border: 1px solid var(--line);
 }
-.m-name { flex: 1; font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.m-value { font-size: 14px; font-weight: 700; color: var(--el-color-primary); font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
-.m-empty { font-size: 13px; color: var(--text-muted); font-style: italic; padding: 8px 0 12px; }
-.form-hint { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+.m-name { flex: 1; font-size: 14px; font-weight: 600; color: var(--ink); }
+/* 倍率数值：统计数字墨色不上色铁律（REQ §1.1），文楷落款感 */
+.m-value { font-size: 14px; font-weight: 700; color: var(--ink); font-family: var(--f-d); font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
+.m-empty { font-size: 13px; color: var(--ink3); font-style: italic; padding: 8px 0 12px; }
+.form-hint { font-size: 11px; color: var(--ink2); margin-top: 4px; }
 </style>

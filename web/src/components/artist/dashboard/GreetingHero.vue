@@ -69,13 +69,14 @@ onMounted(() => fetchGreeting())
 </script>
 
 <style scoped>
+/* v0.38 第二批: 纸墨 token（第一批白名单内补漏） */
 .greeting-hero { display: flex; flex-direction: column; gap: 12px; }
 
 /* 问候区：整块可点击（R7） */
 .greeting-area {
   padding: 20px 24px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--color-primary-soft), transparent 70%);
+  border-radius: var(--r-l);
+  background: linear-gradient(135deg, var(--hq-t), transparent 70%);
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -85,8 +86,8 @@ onMounted(() => fetchGreeting())
 .greeting-area:active { filter: brightness(0.97); }
 .greeting-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .greeting-icon { font-size: 24px; }
-.greeting-text { font-size: 28px; font-weight: 400; color: var(--text-primary); margin: 0; }
-.greeting-date { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.greeting-text { font-size: 28px; font-weight: 400; color: var(--ink); margin: 0; }
+.greeting-date { margin-top: 6px; font-size: 12px; color: var(--ink2); }
 
 /* 问候语切换动画 */
 .greeting-fade-enter-active { transition: opacity 0.2s, transform 0.2s; }
@@ -97,8 +98,9 @@ onMounted(() => fetchGreeting())
 /* R52: 今日统计紧凑行 */
 .today-stats-row {
   display: flex; align-items: center; gap: 10px;
-  font-size: 14px; color: var(--text-secondary);
+  font-size: 14px; color: var(--ink2);
 }
-.today-stats-item strong { font-variant-numeric: tabular-nums; }
-.today-stats-sep { color: var(--text-muted); }
+/* 统计数字墨色不上色铁律（REQ §1.1）——strong 仅加粗等宽，颜色继承墨色 */
+.today-stats-item strong { font-variant-numeric: tabular-nums; color: var(--ink); font-family: var(--f-d); }
+.today-stats-sep { color: var(--ink3); }
 </style>
