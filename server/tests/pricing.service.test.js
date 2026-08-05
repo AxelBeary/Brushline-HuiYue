@@ -85,13 +85,9 @@ describe('价格计算器服务 (Pricing Service)', () => {
       expect(result.installments[1].amount).toBe(140) // 70%
     })
 
-    it('TC-P-16: 传 addons 不影响档位算价（旧增项已冻结，等价忽略）', () => {
-      // v0.39 addons 清理第一批：price_addons/addon_tiers 冻结，
-      // 即使传入不存在的增项 ID 也不再拒绝/计价，档位基础价不变
-      const result = pricingService.calculatePrice(artist.id, {
-        tierId: tier.id,
-        addons: [{ addonId: 99999, quantity: 1 }]
-      })
+    it('TC-P-16: 纯基础价算价（旧增项已 DROP，addons 参数移除）', () => {
+      // v43: price_addons/addon_tiers 已删除，calculatePrice 契约无 addons
+      const result = pricingService.calculatePrice(artist.id, { tierId: tier.id })
 
       expect(result.basePrice).toBe(200)
       expect(result.addonTotal).toBe(0)
@@ -100,16 +96,12 @@ describe('价格计算器服务 (Pricing Service)', () => {
       expect(result.breakdown).toHaveLength(1)
     })
 
-    it('TC-P-17: 传多个 addons（含重复 ID）也不影响档位算价', () => {
-      // 旧逻辑：重复增项 ID 抛 VALIDATION、不存在增项抛 ADDON_NOT_FOUND；
-      // 现均等价忽略（增项冻结，不再读取任何增项表）
+    it('TC-P-17: 调用方传多余 addons 属性被忽略（JS 运行时，TS 契约已移除）', () => {
+      // v43 DROP 后 CalculatePriceOpts 已无 addons 字段；JS 调用方传多余属性被忽略
+      // （TS 调用方编译期即报错——路由 schema 已拒收）
       const result = pricingService.calculatePrice(artist.id, {
         tierId: tier.id,
-        addons: [
-          { addonId: 1, quantity: 1 },
-          { addonId: 1, quantity: 2 },
-          { addonId: 99999 }
-        ]
+        addons: [{ addonId: 99999, quantity: 1 }]
       })
 
       expect(result.addonTotal).toBe(0)

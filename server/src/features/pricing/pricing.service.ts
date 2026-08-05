@@ -121,17 +121,15 @@ export function getPublicPricing(artistId: number): PublicPricing {
 
 interface CalculatePriceOpts {
   tierId: number
-  addons?: Array<{ addonId: number; quantity?: number }>
   usageMultiplierId?: number | null
   rushMultiplierId?: number | null
 }
 
 /**
  * 核心计算：无状态，传入选择返回价格明细
+ * v43: 旧增项（price_addons/addon_tiers）已 DROP，addons 参数彻底移除
  */
 export function calculatePrice(artistId: number, opts: CalculatePriceOpts): PriceResult {
-  // v0.39 addons 清理第一批：旧增项（price_addons/addon_tiers）已冻结，
-  // opts.addons 等价忽略不再计价（调用方仍传，下批删 schema 时同步移除）
   const { tierId, usageMultiplierId = null, rushMultiplierId = null } = opts
 
   // 1. 基础价
