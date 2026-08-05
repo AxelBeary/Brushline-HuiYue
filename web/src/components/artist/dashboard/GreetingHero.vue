@@ -12,11 +12,12 @@
       </div>
       <div class="greeting-date">{{ dateLine }}</div>
     </div>
-    <!-- R52: 今日统计紧凑行（始终显示，无数据 ¥0；金额后端返分，前端 /100） -->
+    <!-- R52: 今日统计紧凑行（始终显示，无数据 ¥0；金额后端返分，前端 /100）
+         v0.38: 统计数字一律墨色（REQ §1.1 硬规则，不上色） -->
     <div class="today-stats-row">
-      <span class="today-stats-item">{{ $t('dashboard.todayNewOrders') }} <strong class="text-gold">¥{{ formatCents(stats?.todayNewOrderCents) }}</strong></span>
+      <span class="today-stats-item">{{ $t('dashboard.todayNewOrders') }} <strong>¥{{ formatCents(stats?.todayNewOrderCents) }}</strong></span>
       <span class="today-stats-sep">·</span>
-      <span class="today-stats-item">{{ $t('dashboard.todayRevenue') }} <strong class="text-gold">¥{{ formatCents(stats?.todayRevenueCents) }}</strong></span>
+      <span class="today-stats-item">{{ $t('dashboard.todayRevenue') }} <strong>¥{{ formatCents(stats?.todayRevenueCents) }}</strong></span>
     </div>
   </div>
 </template>
