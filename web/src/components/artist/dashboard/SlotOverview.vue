@@ -5,10 +5,11 @@
     @click="$router.push('/slots')"
   >
     <template #header>
-      <div class="slot-header">
-        <span class="slot-title">{{ $t('dashboard.slotTitle') }}</span>
-        <span class="slot-arrow">→</span>
-      </div>
+      <CardHead :title="$t('dashboard.slotTitle')">
+        <template #extra>
+          <span class="slot-arrow">→</span>
+        </template>
+      </CardHead>
     </template>
 
     <!-- 未开启名额限制 → 引导文案 -->
@@ -45,6 +46,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useArtistStore } from '../../../stores/artist.js'
 import { artistApi } from '../../../api/index.js'
+// v0.38 第二批: 统一卡片头部（REQ-026 §二）
+import CardHead from '../visual/CardHead.vue'
 
 const store = useArtistStore()
 
@@ -94,34 +97,34 @@ onMounted(() => load())
 </script>
 
 <style scoped>
-.slot-card { background: var(--bg-card); cursor: pointer; transition: border-color 0.2s; }
-.slot-card:hover { border-color: var(--el-color-primary-light-5); }
-.slot-header { display: flex; align-items: center; justify-content: space-between; }
-.slot-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.slot-arrow { color: var(--text-muted); font-size: 16px; }
+/* v0.38 第二批: 纸墨 token（第一批白名单内补漏；主文案数字墨色不上色铁律） */
+.slot-card { background: var(--card); cursor: pointer; transition: border-color 0.2s; }
+.slot-card:hover { border-color: color-mix(in srgb, var(--hq) 50%, transparent); }
+.slot-arrow { color: var(--ink3); font-size: 16px; }
 
-/* #4: 主文案（与客户主页一致，大字） */
+/* #4: 主文案（与客户主页一致，大字）——统计数字墨色不上色（原 --color-primary 墨黑下变浅蓝） */
 .slot-display {
-  font-size: 20px; font-weight: 700; color: var(--color-primary);
+  font-size: 20px; font-weight: 700; color: var(--ink);
+  font-family: var(--f-d);
   margin: 0 0 12px; font-variant-numeric: tabular-nums;
 }
 /* #4: 未开启引导文案 */
-.slot-guide { font-size: 13px; color: var(--text-secondary); margin: 0; }
+.slot-guide { font-size: 13px; color: var(--ink2); margin: 0; }
 
 .slot-row { margin-bottom: 10px; }
-.slot-label { font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+.slot-label { font-size: 13px; color: var(--ink2); display: block; margin-bottom: 4px; }
 .slot-bar {
   height: 10px; border-radius: 5px;
-  background: var(--bg-secondary, #f0f0f0);
+  background: var(--paper2);
   overflow: hidden;
 }
 .slot-bar-fill {
   height: 100%; border-radius: 5px;
-  background: var(--color-primary);
+  background: var(--hq);
   transition: width 0.35s ease;
 }
-/* 满 → 橙红（验收 5.3） */
-.slot-bar-fill--full { background: var(--el-color-warning); }
+/* 满 → 藤黄（验收 5.3；藤黄=缓冲提醒） */
+.slot-bar-fill--full { background: var(--th); }
 
-.slot-next { font-size: 12px; color: var(--text-secondary); margin: 4px 0 0; }
+.slot-next { font-size: 12px; color: var(--ink2); margin: 4px 0 0; }
 </style>
