@@ -1,11 +1,12 @@
 import db from '../../db/connection.js'
 import { AppError, E } from '../../shared/errors.js'
-import type { Addon, Multiplier, PriceBreakdownItem, PriceResult } from '../../types/entities.js'
+import type { Multiplier, PriceBreakdownItem, PriceResult } from '../../types/entities.js'
 
 // ============================================
 // 价格计算器服务 - 倍率 CRUD + 计算引擎
 // （v0.36 C-1：旧增项管理 API/函数已删除——前端零消费，增项数据面由新画风模型承接；
-//   calculatePrice 仍直读 price_addons/addon_tiers，公开算价链路不动）
+//   v0.39 addons 清理第一批：算价读路径已移除 price_addons/addon_tiers 读取，
+//   addons 参数等价忽略不再计价；档位基础价（price_tiers）不受影响）
 // ============================================
 
 // ─── 倍率 CRUD ───
@@ -95,34 +96,11 @@ interface PublicPricing {
  */
 export function getPublicPricing(artistId: number): PublicPricing {
   // v0.24 #10: 过滤 hidden 档位（showcase 保留，前端渲染灰色"暂不接单"）
+  // v0.39 addons 清理第一批：不再读取 price_addons/addon_tiers（表已冻结），
+  // tiers 保留空 addons 字段维持响应结构兼容（前端旧模型兜底分支下批同清）
   const tiers = db.prepare(
     "SELECT * FROM price_tiers WHERE artist_id = ? AND visibility != 'hidden' ORDER BY sort_order ASC"
   ).all(artistId) as Array<Record<string, unknown> & { id: number }>
-
-  const addons = db.prepare(
-    'SELECT * FROM price_addons WHERE artist_id = ? AND enabled = 1 ORDER BY sort_order ASC'
-  ).all(artistId) as Array<Record<string, unknown> & { id: number }>
-
-  // P2-B 修复：加 WHERE 过滤，避免全表扫描 + 跨画师数据混入
-  const tierLinks = db.prepare(
-    'SELECT addon_id, tier_id FROM addon_tiers WHERE addon_id IN (SELECT id FROM price_addons WHERE artist_id = ?)'
-  ).all(artistId) as Array<{ addon_id: number; tier_id: number }>
-
-  // 构建 tierId → addonIds 映射
-  const tierAddonMap: Record<number, number[]> = {}
-  for (const link of tierLinks) {
-    if (!tierAddonMap[link.tier_id]) tierAddonMap[link.tier_id] = []
-    tierAddonMap[link.tier_id].push(link.addon_id)
-  }
-
-  const addonMap = Object.fromEntries(addons.map(a => [a.id, a]))
-
-  const tiersWithAddons = tiers.map(t => ({
-    ...t,
-    addons: (tierAddonMap[t.id] || [])
-      .map(aid => addonMap[aid])
-      .filter(Boolean)
-  }))
 
   const multipliers = db.prepare(
     'SELECT * FROM price_multipliers WHERE artist_id = ? AND enabled = 1 ORDER BY type ASC, multiplier DESC'
@@ -133,7 +111,7 @@ export function getPublicPricing(artistId: number): PublicPricing {
   ).all(artistId) as Array<{ name: string; basis_points: number }>
 
   return {
-    tiers: tiersWithAddons,
+    tiers: tiers.map(t => ({ ...t, addons: [] })),
     multipliers,
     installments: stages.map(s => ({ label: s.name, basisPoints: s.basis_points })),
     // v0.31 F3: 客户端据此决定是否显示折扣码输入框
@@ -151,7 +129,11 @@ interface CalculatePriceOpts {
 /**
  * 核心计算：无状态，传入选择返回价格明细
  */
-export function calculatePrice(artistId: number, { tierId, addons = [], usageMultiplierId = null, rushMultiplierId = null }: CalculatePriceOpts): PriceResult {
+export function calculatePrice(artistId: number, opts: CalculatePriceOpts): PriceResult {
+  // v0.39 addons 清理第一批：旧增项（price_addons/addon_tiers）已冻结，
+  // opts.addons 等价忽略不再计价（调用方仍传，下批删 schema 时同步移除）
+  const { tierId, usageMultiplierId = null, rushMultiplierId = null } = opts
+
   // 1. 基础价
   if (!tierId) throw new AppError(E.PRICING_TIER_REQUIRED)
   const tier = db.prepare(
@@ -162,52 +144,8 @@ export function calculatePrice(artistId: number, { tierId, addons = [], usageMul
   const basePrice = tier.price
   const breakdown: PriceBreakdownItem[] = [{ type: 'tier', name: tier.name, amount: basePrice, quantity: 1, multiplier: 1.0 }]
 
-  // 2. 增项合计（百分比永远基于基础价）
-  let addonTotal = 0
-  const validTierAddonIds = new Set(
-    (db.prepare('SELECT addon_id FROM addon_tiers WHERE tier_id = ?').all(tierId) as Array<{ addon_id: number }>).map(r => r.addon_id)
-  )
-
-  // P2-#12: 同一增项去重（防重复提交绕过 max_qty）
-    const seenAddonIds = new Set<number>()
-    for (const sel of addons) {
-      if (seenAddonIds.has(sel.addonId)) {
-        throw new AppError(E.VALIDATION, 400, { reason: `增项 ID ${sel.addonId} 重复提交` })
-      }
-      seenAddonIds.add(sel.addonId)
-
-      const addon = db.prepare(
-      'SELECT * FROM price_addons WHERE id = ? AND artist_id = ? AND enabled = 1'
-    ).get(sel.addonId, artistId) as Addon | undefined
-    if (!addon) throw new AppError(E.ADDON_NOT_FOUND, 404, { addonId: sel.addonId })
-    if (!validTierAddonIds.has(addon.id)) throw new AppError(E.ADDON_NOT_FOR_TIER, 400, { addon: addon.name })
-
-    // inquiry 模式不计价
-    if (addon.select_mode === 'inquiry') {
-      breakdown.push({ type: 'addon', name: `${addon.name}（面议）`, amount: 0, quantity: 1, multiplier: 1.0 })
-      continue
-    }
-
-    const qty = addon.select_mode === 'toggle' ? 1 : Math.max(1, sel.quantity || 1)
-    if (addon.select_mode === 'quantity' && qty > addon.max_qty) {
-      throw new AppError(E.ADDON_MAX_QTY, 400, { max: addon.max_qty })
-    }
-
-    const unitAmount = addon.price_type === 'percent'
-      ? basePrice * addon.price_value
-      : addon.price_value
-
-    const lineTotal = unitAmount * qty
-    addonTotal += lineTotal
-
-    breakdown.push({
-      type: 'addon',
-      name: qty > 1 ? `${addon.name} ×${qty}` : addon.name,
-      amount: lineTotal,
-      quantity: qty,
-      multiplier: 1.0
-    })
-  }
+  // 2. 增项：旧增项冻结，不再读取 addon_tiers/price_addons，addonTotal 恒 0
+  const addonTotal = 0
 
   const subtotal = basePrice + addonTotal
 
