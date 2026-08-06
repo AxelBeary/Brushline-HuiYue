@@ -59,7 +59,7 @@
               <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
             </button>
           </div>
-          <button class="tpl-style-order-btn" @click="goOrder()">
+          <button class="tpl-style-order-btn" :disabled="artistStatus !== 'open'" @click="goOrder()">
             {{ $t('artistHome.styleOrderBtn') }}
           </button>
           <p v-if="orderHint" class="tpl-style-order-hint">{{ orderHint }}</p>
@@ -101,7 +101,7 @@
         <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
       </button>
     </div>
-    <button class="tpl-style-order-btn" @click="goOrder()">
+    <button class="tpl-style-order-btn" :disabled="artistStatus !== 'open'" @click="goOrder()">
       {{ $t('artistHome.styleOrderBtn') }}
     </button>
     <p v-if="orderHint" class="tpl-style-order-hint tpl-style-order-hint--single">{{ orderHint }}</p>
@@ -119,12 +119,17 @@ const props = defineProps({
   /** 画风列表（GET /api/public/styles/:subdomain，只含 is_active=1，按 sort_order 排序） */
   styles: { type: Array, default: () => [] },
   /** 画师子域名（跳转下单用） */
-  subdomain: { type: String, default: '' }
+  subdomain: { type: String, default: '' },
+  /** 画师信息（status 决定约稿按钮是否禁用） */
+  artist: { type: Object, default: null }
 })
 
 const { imgUrl } = useArtistData(props)
 const router = useRouter()
 const { t } = useI18n()
+
+/** 画师接单状态：取不到时默认 open（不误伤可约稿画师） */
+const artistStatus = computed(() => props.artist?.status ?? 'open')
 
 const activeIndex = ref(0)
 const activeStyle = computed(() => props.styles[activeIndex.value] || null)
@@ -375,9 +380,13 @@ function goOrder() {
   transition: opacity 0.2s, transform 0.15s;
   font-family: inherit;
 }
-.tpl-style-order-btn:hover {
+.tpl-style-order-btn:hover:not(:disabled) {
   opacity: 0.88;
   transform: translateY(-1px);
+}
+.tpl-style-order-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 /* v0.34 任务B：选中尺寸后的下单引导提示 */
 .tpl-style-order-hint {

@@ -54,10 +54,10 @@
           </p>
           <!-- 价格计算器扩展点 -->
           <slot name="addons" :tier="activeTier"></slot>
-          <!-- 选择此档位（showcase 禁用） -->
+          <!-- 选择此档位（showcase 或画师非 open 时禁用） -->
           <button
             class="tpl-tier-select-btn"
-            :disabled="activeTier.visibility === 'showcase'"
+            :disabled="activeTier.visibility === 'showcase' || artistStatus !== 'open'"
             @click="goOrder()"
           >
             {{ activeTier.visibility === 'showcase' ? $t('artistHome.tierShowcaseBtn') : $t('artistHome.tierSelectBtn') }}
@@ -78,11 +78,16 @@ const props = defineProps({
   /** featured: 保留兼容（展示柜模式下不使用） */
   featured: { type: Boolean, default: false },
   /** 画师子域名（跳转下单用） */
-  subdomain: { type: String, default: '' }
+  subdomain: { type: String, default: '' },
+  /** 画师信息（status 决定约稿按钮是否禁用） */
+  artist: { type: Object, default: null }
 })
 
 const { imgUrl } = useArtistData(props)
 const router = useRouter()
+
+/** 画师接单状态：取不到时默认 open（不误伤可约稿画师） */
+const artistStatus = computed(() => props.artist?.status ?? 'open')
 
 const activeIndex = ref(0)
 const activeTier = computed(() => props.tiers[activeIndex.value] || null)
