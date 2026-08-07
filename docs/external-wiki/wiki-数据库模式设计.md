@@ -1,14 +1,17 @@
-# 数据库模式设计
+﻿# 数据库模式设计
+
+> 本文按 `artist-commission` master 当前代码重写（2026-08-07，四号）。
+> 原「price_tiers 画风×尺寸模型、orders 含 base_price/final_price、order_references 为 url、deliverables 为 title/file_url、artist_workflow_stages 为 stage_name/is_default」等描述全部与当前 DDL 不符，已按 `server/src/db/init.js` 实际 DDL 重写。
+> 重写依据：`repowiki-核对报告-20260806.md` 🔴 4-7 项过时点 + ⚪ 缺失 11 张表。
 
 <cite>
-**本文引用的文件**   
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)
-- [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)
-- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)
-- [server/src/features/pricing/pricing.service.ts](file://server/src/features/pricing/pricing.service.ts)
-- [server/src/features/artist/workflow.service.ts](file://server/src/features/artist/workflow.service.ts)
+**本文引用的文件**
+- [server/src/db/init.js](file://server/src/db/init.js)（schema 建表 + MIGRATIONS 迁移数组，最新 v43）
+- [server/src/types/entities.ts](file://server/src/types/entities.ts)（TS 类型定义）
+- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)（订单状态常量）
+- [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)（订单工作流服务）
+- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)（画风计价服务）
+- [server/src/features/artist/workflow.service.ts](file://server/src/features/artist/workflow.service.ts)（画师工作流服务）
 - [server/tests/migration-v38.test.js](file://server/tests/migration-v38.test.js)
 - [server/tests/migration-v40.test.js](file://server/tests/migration-v40.test.js)
 - [server/tests/migration-v41.test.js](file://server/tests/migration-v41.test.js)
@@ -16,572 +19,438 @@
 </cite>
 
 ## 目录
-1. [简介](#简介)
-2. [项目结构](#项目结构)
-3. [核心组件](#核心组件)
-4. [架构总览](#架构总览)
-5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考虑](#性能考虑)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
-
-## 简介
-本文件为阿里画师约稿管理平台的数据库模式设计文档，聚焦于核心实体表结构与关联规则，包括 Artists（画师表）、Orders（订单表）、Tiers（价格档位表）、WorkflowStages（工作流节点表）、Multipliers（倍率表）等。文档提供字段定义、数据类型、约束与默认值说明，给出完整的 SQL 建表语句与索引定义，并补充数据验证规则与业务约束，帮助开发者与维护者快速理解并正确扩展系统的数据模型。
-
-## 项目结构
-数据库模式定义集中在后端初始化脚本中，类型定义位于 TypeScript 实体文件中；订单状态与工作流逻辑由服务层实现，测试用例覆盖迁移与边界场景。
-
-```mermaid
-graph TB
-A["server/src/db/init.js<br/>数据库初始化与DDL"] --> B["server/src/types/entities.ts<br/>TS 类型定义"]
-A --> C["server/src/utils/order-status.ts<br/>订单状态常量"]
-A --> D["server/src/features/order/order-workflow.service.ts<br/>订单工作流服务"]
-A --> E["server/src/features/pricing/style-pricing.service.ts<br/>画风计价服务"]
-A --> F["server/src/features/pricing/pricing.service.ts<br/>通用计价服务"]
-A --> G["server/src/features/artist/workflow.service.ts<br/>画师工作流服务"]
-H["server/tests/migration-*.test.js<br/>迁移与兼容性测试"] --> A
-```
-
-**图表来源** 
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)
-- [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)
-- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)
-- [server/src/features/pricing/pricing.service.ts](file://server/src/features/pricing/pricing.service.ts)
-- [server/src/features/artist/workflow.service.ts](file://server/src/features/artist/workflow.service.ts)
-- [server/tests/migration-v38.test.js](file://server/tests/migration-v38.test.js)
-- [server/tests/migration-v40.test.js](file://server/tests/migration-v40.test.js)
-- [server/tests/migration-v41.test.js](file://server/tests/migration-v41.test.js)
-- [server/tests/migration-v43.test.js](file://server/tests/migration-v43.test.js)
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-
-## 核心组件
-本节概述核心实体及其职责：
-- 画师表（artists）：存储画师基础信息与可见性、配额等配置。
-- 订单表（orders）：记录约稿订单的核心信息、状态、时间戳与支付汇总。
-- 价格档位表（price_tiers）：按画风与尺寸定义基础价格与生效区间。
-- 工作流节点表（artist_workflow_stages / default_workflow_template）：定义订单推进的阶段模板与实例化阶段。
-- 倍率表（price_multipliers）：用于对基础价进行乘数调整（如加急、特殊要求）。
-- 附加项与参考（order_extra_items / order_references）：订单的附加内容与外部参考链接。
-- 交付物（deliverables）：订单产出的交付清单。
-- 支付相关（order_payments / order_payment_installments）：分次支付与分期明细。
-- 风格与尺寸（art_styles / style_sizes）：画风与尺寸枚举或映射。
-- 平台配置与审计（platform_config / schema_migrations / order_activity_logs / guestbook_messages / discount_codes / addon_templates）：平台级设置、迁移版本、活动日志、留言板、折扣码与附加模板。
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-
-## 架构总览
-下图展示核心实体之间的关系与关键外键约束，体现订单、价格、工作流与支付的关联。
-
-```mermaid
-erDiagram
-ARTISTS {
-int id PK
-string name
-string slug UK
-boolean active
-json settings
-timestamp created_at
-timestamp updated_at
-}
-ORDERS {
-int id PK
-int artist_id FK
-string status
-decimal base_price
-decimal final_price
-timestamp due_date
-timestamp created_at
-timestamp updated_at
-}
-PRICE_TIERS {
-int id PK
-int artist_id FK
-string style_name
-string size_name
-decimal base_price
-date start_date
-date end_date
-boolean visible
-}
-ARTIST_WORKFLOW_STAGES {
-int id PK
-int artist_id FK
-string stage_name
-int sort_order
-boolean is_default
-}
-DEFAULT_WORKFLOW_TEMPLATE {
-int id PK
-int artist_id FK
-json stages_json
-}
-PRICE_MULTIPLIERS {
-int id PK
-int artist_id FK
-string multiplier_name
-decimal factor
-boolean active
-}
-ORDER_EXTRA_ITEMS {
-int id PK
-int order_id FK
-string item_name
-decimal price
-}
-ORDER_REFERENCES {
-int id PK
-int order_id FK
-string url
-}
-DELIVERABLES {
-int id PK
-int order_id FK
-string title
-string file_url
-}
-ORDER_PAYMENTS {
-int id PK
-int order_id FK
-decimal amount
-string method
-timestamp paid_at
-}
-ORDER_PAYMENT_INSTALLMENTS {
-int id PK
-int payment_id FK
-decimal amount
-boolean paid
-}
-ART_STYLES {
-int id PK
-string name UK
-}
-STYLE_SIZES {
-int id PK
-string name UK
-}
-ORDERS ||--o{ ORDER_EXTRA_ITEMS : "包含"
-ORDERS ||--o{ ORDER_REFERENCES : "包含"
-ORDERS ||--o{ DELIVERABLES : "包含"
-ORDERS ||--o{ ORDER_PAYMENTS : "包含"
-ORDER_PAYMENTS ||--o{ ORDER_PAYMENT_INSTALLMENTS : "包含"
-ARTISTS ||--o{ ORDERS : "拥有"
-ARTISTS ||--o{ PRICE_TIERS : "定义"
-ARTISTS ||--o{ ARTIST_WORKFLOW_STAGES : "定义"
-ARTISTS ||--o{ DEFAULT_WORKFLOW_TEMPLATE : "定义"
-ARTISTS ||--o{ PRICE_MULTIPLIERS : "定义"
-ART_STYLES ||--o{ PRICE_TIERS : "对应"
-STYLE_SIZES ||--o{ PRICE_TIERS : "对应"
-```
-
-**图表来源** 
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-
-## 详细组件分析
-
-### 画师表（artists）
-- 字段与类型
-  - id: 整数主键，自增
-  - name: 字符串，画师名称
-  - slug: 字符串，唯一标识（URL友好）
-  - active: 布尔，是否启用
-  - settings: JSON，画师个性化配置
-  - created_at / updated_at: 时间戳
-- 约束与索引
-  - 主键：id
-  - 唯一索引：slug
-  - 建议索引：active（用于筛选可用画师）
-- 业务约束
-  - slug 需全局唯一且不可重复
-  - active=false 的画师不应出现在公开列表
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/types/entities.ts](file://server/src/types/entities.ts)
-
-### 订单表（orders）
-- 字段与类型
-  - id: 整数主键
-  - artist_id: 整数外键，指向 artists.id
-  - status: 字符串，订单状态（如待确认、进行中、已完成、已取消等）
-  - base_price: 小数，基础价格
-  - final_price: 小数，最终价格（含倍率、附加项等）
-  - due_date: 日期/时间，交付截止
-  - created_at / updated_at: 时间戳
-- 约束与索引
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：status、artist_id、due_date
-- 数据验证与业务规则
-  - status 必须属于预定义集合（见“订单状态”小节）
-  - final_price ≥ 0
-  - due_date ≥ created_at
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)
-
-### 价格档位表（price_tiers）
-- 字段与类型
-  - id: 整数主键
-  - artist_id: 整数外键，指向 artists.id
-  - style_name: 字符串，画风名称
-  - size_name: 字符串，尺寸名称
-  - base_price: 小数，基础单价
-  - start_date / end_date: 日期，生效区间
-  - visible: 布尔，是否对外可见
-- 约束与索引
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、style_name、size_name、start_date、end_date
-- 业务约束
-  - 同一画师的同画风+同尺寸在同一时间点只能有一个生效档位
-  - visible=false 的档位不参与前端展示与自动计价
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)
-
-### 工作流节点表（artist_workflow_stages / default_workflow_template）
-- 字段与类型
-  - artist_workflow_stages
-    - id: 整数主键
-    - artist_id: 整数外键
-    - stage_name: 字符串，阶段名（如“需求确认”“草稿”“修改”“交付”）
-    - sort_order: 整数，排序权重
-    - is_default: 布尔，是否为默认模板的一部分
-  - default_workflow_template
-    - id: 整数主键
-    - artist_id: 整数外键
-    - stages_json: JSON，阶段序列与属性
-- 约束与索引
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、sort_order
-- 业务约束
-  - 默认模板中的阶段顺序应严格递增
-  - 订单实例阶段应遵循模板顺序推进
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/features/artist/workflow.service.ts](file://server/src/features/artist/workflow.service.ts)
-- [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)
-
-### 倍率表（price_multipliers）
-- 字段与类型
-  - id: 整数主键
-  - artist_id: 整数外键
-  - multiplier_name: 字符串，倍率名称（如“加急”“复杂背景”）
-  - factor: 小数，倍率系数（如 1.2、1.5）
-  - active: 布尔，是否启用
-- 约束与索引
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、multiplier_name
-- 业务约束
-  - factor > 0
-  - 多倍率可叠加，需在计价引擎中明确叠加策略（累乘或累加）
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-- [server/src/features/pricing/pricing.service.ts](file://server/src/features/pricing/pricing.service.ts)
-
-### 订单附加项与参考（order_extra_items / order_references）
-- 字段与类型
-  - order_extra_items
-    - id: 整数主键
-    - order_id: 整数外键
-    - item_name: 字符串，附加项名称
-    - price: 小数，附加项价格
-  - order_references
-    - id: 整数主键
-    - order_id: 整数外键
-    - url: 字符串，外部参考链接
-- 约束与索引
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-- 业务约束
-  - item_name 非空
-  - url 需符合 URL 格式校验
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-### 交付物（deliverables）
-- 字段与类型
-  - id: 整数主键
-  - order_id: 整数外键
-  - title: 字符串，交付物标题
-  - file_url: 字符串，文件地址
-- 约束与索引
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-- 业务约束
-  - file_url 有效且可访问
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-### 支付相关（order_payments / order_payment_installments）
-- 字段与类型
-  - order_payments
-    - id: 整数主键
-    - order_id: 整数外键
-    - amount: 小数，支付金额
-    - method: 字符串，支付方式
-    - paid_at: 时间戳，支付时间
-  - order_payment_installments
-    - id: 整数主键
-    - payment_id: 整数外键
-    - amount: 小数，分期金额
-    - paid: 布尔，是否已付
-- 约束与索引
-  - 主键：id
-  - 外键：order_id → orders(id)，payment_id → order_payments(id)
-  - 建议索引：order_id、payment_id
-- 业务约束
-  - 分期金额之和应等于支付金额
-  - paid=true 时，paid_at 应合理
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-### 风格与尺寸（art_styles / style_sizes）
-- 字段与类型
-  - art_styles
-    - id: 整数主键
-    - name: 字符串，唯一画风名
-  - style_sizes
-    - id: 整数主键
-    - name: 字符串，唯一尺寸名
-- 约束与索引
-  - 主键：id
-  - 唯一索引：name
-- 业务约束
-  - 名称全局唯一，避免歧义
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-### 平台配置与审计（platform_config / schema_migrations / order_activity_logs / guestbook_messages / discount_codes / addon_templates）
-- platform_config：平台级配置键值对
-- schema_migrations：数据库迁移版本追踪
-- order_activity_logs：订单活动日志（状态变更、操作记录）
-- guestbook_messages：留言板消息
-- discount_codes：折扣码与使用限制
-- addon_templates：附加项模板库
-- 约束与索引
-  - 根据用途建立必要的主键与唯一索引
-  - 日志表建议按时间分区或归档
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-## 依赖关系分析
-- 订单依赖画师、价格档位、倍率、附加项、参考、交付物与支付。
-- 价格档位依赖画风与尺寸字典。
-- 工作流模板与阶段由画师维度管理，订单实例继承模板阶段。
-- 支付分期依赖于支付记录。
-
-```mermaid
-graph LR
-ARTISTS["artists"] --> ORDERS["orders"]
-ARTISTS --> PRICE_TIERS["price_tiers"]
-ARTISTS --> WORKFLOW_STAGES["artist_workflow_stages"]
-ARTISTS --> DEFAULT_TEMPLATE["default_workflow_template"]
-ARTISTS --> MULTIPLIERS["price_multipliers"]
-ART_STYLES["art_styles"] --> PRICE_TIERS
-STYLE_SIZES["style_sizes"] --> PRICE_TIERS
-ORDERS --> EXTRA_ITEMS["order_extra_items"]
-ORDERS --> REFERENCES["order_references"]
-ORDERS --> DELIVERABLES["deliverables"]
-ORDERS --> PAYMENTS["order_payments"]
-PAYMENTS --> INSTALLMENTS["order_payment_installments"]
-```
-
-**图表来源** 
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-## 性能考虑
-- 高频查询字段建立索引：orders.status、orders.artist_id、orders.due_date；price_tiers.artist_id、style_name、size_name、start_date、end_date；order_payments.order_id。
-- 大文本与二进制字段（如文件路径）避免在热点查询中返回，必要时拆分到独立表或对象存储。
-- 日志表（order_activity_logs）定期归档，避免单表过大影响写入与查询。
-- 使用事务保证订单创建、支付与阶段推进的一致性。
-
-[本节为通用指导，不直接分析具体文件]
-
-## 故障排查指南
-- 订单状态异常
-  - 检查状态常量定义与更新逻辑，确保状态转换合法。
-  - 参考订单状态工具与服务层实现。
-- 计价错误
-  - 核对价格档位生效区间与倍率因子；检查附加项价格与叠加策略。
-- 工作流卡住
-  - 检查默认模板阶段顺序与订单实例阶段状态一致性。
-- 支付不一致
-  - 校验分期金额总和与支付金额一致；检查支付时间与状态同步。
-
-**章节来源**
-- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)
-- [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)
-- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)
-- [server/src/features/pricing/pricing.service.ts](file://server/src/features/pricing/pricing.service.ts)
-- [server/src/features/artist/workflow.service.ts](file://server/src/features/artist/workflow.service.ts)
-
-## 结论
-本模式以订单为核心，围绕画师、价格档位、工作流与支付构建完整的数据模型。通过明确的字段定义、约束与索引策略，保障数据一致性与查询性能。建议在后续迭代中持续完善迁移脚本与测试覆盖，确保模型演进的可追溯性与稳定性。
-
-[本节为总结性内容，不直接分析具体文件]
-
-## 附录
-
-### 完整 SQL 建表语句与索引定义
-以下为基于仓库中数据库初始化脚本整理的建表语句与索引定义（按表分组，便于导入与审查）：
-
-- 画师表（artists）
-  - 字段：id、name、slug、active、settings、created_at、updated_at
-  - 主键：id
-  - 唯一索引：slug
-  - 建议索引：active
-
-- 订单表（orders）
-  - 字段：id、artist_id、status、base_price、final_price、due_date、created_at、updated_at
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：status、artist_id、due_date
-
-- 价格档位表（price_tiers）
-  - 字段：id、artist_id、style_name、size_name、base_price、start_date、end_date、visible
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、style_name、size_name、start_date、end_date
-
-- 工作流节点表（artist_workflow_stages）
-  - 字段：id、artist_id、stage_name、sort_order、is_default
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、sort_order
-
-- 默认工作流模板（default_workflow_template）
-  - 字段：id、artist_id、stages_json
-  - 主键：id
-  - 外键：artist_id → artists(id)
-
-- 倍率表（price_multipliers）
-  - 字段：id、artist_id、multiplier_name、factor、active
-  - 主键：id
-  - 外键：artist_id → artists(id)
-  - 建议索引：artist_id、multiplier_name
-
-- 订单附加项（order_extra_items）
-  - 字段：id、order_id、item_name、price
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-
-- 订单参考（order_references）
-  - 字段：id、order_id、url
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-
-- 交付物（deliverables）
-  - 字段：id、order_id、title、file_url
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-
-- 支付记录（order_payments）
-  - 字段：id、order_id、amount、method、paid_at
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id
-
-- 支付分期（order_payment_installments）
-  - 字段：id、payment_id、amount、paid
-  - 主键：id
-  - 外键：payment_id → order_payments(id)
-  - 建议索引：payment_id
-
-- 画风字典（art_styles）
-  - 字段：id、name
-  - 主键：id
-  - 唯一索引：name
-
-- 尺寸字典（style_sizes）
-  - 字段：id、name
-  - 主键：id
-  - 唯一索引：name
-
-- 平台配置（platform_config）
-  - 字段：key、value（示例）
-  - 主键：key（或自增id）
-  - 唯一索引：key
-
-- 迁移版本（schema_migrations）
-  - 字段：version、applied_at（示例）
-  - 主键：version
-
-- 订单活动日志（order_activity_logs）
-  - 字段：id、order_id、action、payload、created_at（示例）
-  - 主键：id
-  - 外键：order_id → orders(id)
-  - 建议索引：order_id、created_at
-
-- 留言板（guestbook_messages）
-  - 字段：id、author、content、created_at（示例）
-  - 主键：id
-
-- 折扣码（discount_codes）
-  - 字段：code、discount_type、value、valid_from、valid_to、usage_limit、used_count（示例）
-  - 主键：code
-  - 唯一索引：code
-
-- 附加模板（addon_templates）
-  - 字段：id、name、template_json、created_at（示例）
-  - 主键：id
-
-**章节来源**
-- [server/src/db/init.js](file://server/src/db/init.js)
-
-### 数据验证规则与业务约束
-- 订单状态
-  - 状态集合来源于状态常量定义，仅允许在合法集合内切换。
-- 价格与倍率
-  - base_price ≥ 0；factor > 0；final_price = base_price × 倍率 + 附加项价格（依计价引擎策略）。
-- 时间约束
-  - due_date ≥ created_at；start_date ≤ end_date；paid_at 合理。
-- 唯一性
-  - artists.slug、art_styles.name、style_sizes.name 全局唯一。
-- 外键完整性
-  - 所有外键必须指向存在的父记录，删除父记录时需考虑级联策略（通常禁止级联删除，改为限制或删除前检查）。
-
-**章节来源**
-- [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)
-- [server/src/features/pricing/pricing.service.ts](file://server/src/features/pricing/pricing.service.ts)
-- [server/src/features/pricing/style-pricing.service.ts](file://server/src/features/pricing/style-pricing.service.ts)
-
-### 迁移与兼容性测试要点
-- 迁移脚本需保证幂等与回滚能力，测试覆盖新增字段、重命名与默认值变更。
-- 重点验证订单状态、价格档位生效区间、倍率叠加策略在工作流与计价流程中的行为一致性。
-
-**章节来源**
-- [server/tests/migration-v38.test.js](file://server/tests/migration-v38.test.js)
-- [server/tests/migration-v40.test.js](file://server/tests/migration-v40.test.js)
-- [server/tests/migration-v41.test.js](file://server/tests/migration-v41.test.js)
-- [server/tests/migration-v43.test.js](file://server/tests/migration-v43.test.js)
+1. [人话总览](#人话总览)
+2. [迁移机制（MIGRATIONS 数组）](#迁移机制migrations-数组)
+3. [29 张表总览](#29-张表总览)
+4. [画师域](#画师域)
+5. [订单域](#订单域)
+6. [计价域](#计价域)
+7. [工作流域](#工作流域)
+8. [支付域](#支付域)
+9. [内容域](#内容域)
+10. [平台域](#平台域)
+11. [已删除表](#已删除表)
+12. [关键迁移里程碑](#关键迁移里程碑)
+13. [索引](#索引)
+14. [常见问题与维护要点](#常见问题与维护要点)
+
+## 人话总览
+
+**一句话**：数据存在 SQLite 单文件里（`data/commission.db`），共 **29 张表**。所有表结构由 `server/src/db/init.js` 的 `schema` 常量一次性建出（`CREATE TABLE IF NOT EXISTS`），**表结构演进靠「版本化迁移」**——`MIGRATIONS` 数组里按版本号排列的迁移脚本，当前最新版本 **v43**。
+
+**三大模型变化**（与旧文档完全不同的地方）：
+
+1. **价格档位是「档位」模型，不是「画风×尺寸」模型**。`price_tiers` 就是一张简单的档位表（名称+价格+说明+示例图+工作日+排序）；真正的「画风×尺寸」多级定价在独立的 `art_styles` / `style_sizes` / `style_addons` / `size_addon_overrides` 四张表里（v36 多画风模型，REQ-023）。
+2. **订单金额全部用「整数分」（cents）**，不是小数。`total_price_cents` / `final_price_cents` / `paid_total_cents` / `discount_amount_cents`（避免浮点误差）。
+3. **附件上传模型**：`order_references` 存的是文件路径（`file_path / original_name / file_size / mime_type`），不是外部 URL；`deliverables` 是交付文件（`file_path / original_name / file_size`），没有 `title` 也没有 `file_url` 列。
+
+**价格真相源**：订单最终总价 = `order_price_entries`（价格条目账本，v39，REQ-025）里所有条目的 `delta_cents` 之和；只追加、不删不改。
+
+## 迁移机制（MIGRATIONS 数组）
+
+`init.js` 的 `initDatabase()` 启动流程：
+
+1. `exec(schema)`：建全部 29 张表（`IF NOT EXISTS`，幂等）。
+2. 从 `schema_migrations` 表读出已应用的版本号集合。
+3. 按 `version` 升序遍历 `MIGRATIONS` 数组，跳过已应用的，执行未应用的 `up(database)`。
+4. 每次迁移前自动备份：文件数据库复制为 `data/commission.db.bak.v<N>`（`backupDbBeforeMigration`）。
+5. 索引单独在迁移之后执行（`schemaIndexes`），避免老库升级时因列不存在而崩溃。
+
+`schema_migrations` 表：`version`（主键）/ `name` / `applied_at`，记录每个已执行迁移。
+
+**两条历史事故教训**（迁移脚本注释里明确标注，改迁移时必读）：
+
+- **v38**（重建 artists 表补 `hidden` 状态）：SQLite 改 CHECK 约束只能重建表。重建时 DROP 父表会触发子表 `ON DELETE CASCADE` 清空全部子表数据——所以 v38 必须**事务外**执行，且先 `PRAGMA foreign_keys = OFF` 并**回读校验真的关了**才 DROP（2026-08-04 事故根因：PRAGMA foreign_keys 在事务内是 no-op）。
+- **v43**（DROP 旧增项表）：同样必须事务外 + 关 FK + 回读校验；DROP 后跑 `foreign_key_check` 确认零悬空才恢复 FK。
+
+## 29 张表总览
+
+| # | 表名 | 一句话职责 | 引入版本 |
+|---|------|-----------|----------|
+| 1 | `artists` | 画师账号与店铺配置（登录/展示/配额/模板） | 初始 |
+| 2 | `price_tiers` | 价格档位（名称+价格+说明） | 初始 |
+| 3 | `artworks` | 作品集（图片/标题/排序/点赞/封面） | 初始 |
+| 4 | `commission_rules` | 约稿须知（每画师一条） | 初始 |
+| 5 | `orders` | 订单主表（状态机/价格/队列/进度） | 初始 |
+| 6 | `order_references` | 订单参考附件（客户/画师上传的文件） | 初始 |
+| 7 | `order_notes` | 订单备注（文字+图片） | 初始 |
+| 8 | `deliverables` | 交付文件 | 初始 |
+| 9 | `order_extra_items` | 订单附加工作项（SPEC-003） | 初始 |
+| 10 | `artist_workflow_stages` | 画师工作流节点（收款节点+话术模板） | v5 |
+| 11 | `default_workflow_template` | 默认工作流模板 | v5 |
+| 12 | `order_payment_installments` | 订单付款分期（含锁价列） | v5 / v40 |
+| 13 | `order_payments` | 收款流水（额度池） | v24 |
+| 14 | `greeting_templates` | 问候语模板（分时段） | v6 |
+| 15 | `price_multipliers` | 价格倍率（用途/加急） | v9 |
+| 16 | `order_price_breakdown` | 订单价格明细快照 | v9 |
+| 17 | `platform_config` | 平台配置键值对 | 初始 |
+| 18 | `schema_migrations` | 迁移版本跟踪 | 初始 |
+| 19 | `guestbook_messages` | 留言板消息 | v22 |
+| 20 | `discount_codes` | 折扣码 | v32 |
+| 21 | `order_activity_logs` | 订单操作日志（永久保留） | v35 |
+| 22 | `addon_templates` | 增项库模板（画师级） | v36 |
+| 23 | `art_styles` | 画风（多画风模型） | v36 |
+| 24 | `style_sizes` | 尺寸档位（挂在画风下，带图/描述/天数） | v36 / v37 |
+| 25 | `artwork_size_tags` | 作品↔尺寸多对多标注 | v37 |
+| 26 | `style_addons` | 画风增项（从增项库导入，可改价/禁用） | v36 |
+| 27 | `size_addon_overrides` | 尺寸级增项覆盖 | v36 |
+| 28 | `order_price_entries` | 订单价格条目账本（价格真相源） | v39 |
+| 29 | `social_platforms` | 社交平台字典（外链展示） | v42 |
+
+## 画师域
+
+### artists —— 画师账号表
+
+**一句话**：一个画师 = 一个账号 + 一个店铺（子域名）。
+
+关键字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `qq_number` | TEXT UNIQUE | **QQ 号，登录凭证**（TOTP 登录用） |
+| `name` | TEXT | 画师名称 |
+| `subdomain` | TEXT UNIQUE | 店铺子域名 |
+| `artist_code` | TEXT UNIQUE | 身份码 |
+| `status` | TEXT CHECK | `open` / `full` / `break` / `hidden`（v38 补 hidden） |
+| `token_version` | INTEGER | 会话失效版本（登出递增，旧 Cookie 全失效） |
+| `totp_secret` | TEXT | TOTP 密钥（v41） |
+| `totp_verified` | INTEGER | 是否已绑定（v41） |
+| `totp_failed_attempts` | INTEGER | 连续错码计数（v41） |
+| `totp_locked_until` | INTEGER | 锁定截止毫秒时间戳（v41） |
+| `deleted_at` | DATETIME | 软删除时间（非空 = 已删/停用） |
+| `monthly_quota` | INTEGER | 月接单配额（v23） |
+| `batch_limit` / `buffer_limit` | INTEGER | 批次上限/缓冲池上限（v19 批次缓冲系统） |
+| `template_id` / `palette_id` | TEXT | 前端页面模板 / 配色 |
+| `discount_enabled` / `multi_style_enabled` | INTEGER | 折扣开关 / 多画风开关（v37，默认关） |
+| `created_at` | DATETIME | 创建时间 |
+
+### price_tiers —— 价格档位表
+
+**一句话**：简单的档位（名称+价格+说明+示例图+工作天数），**不是**画风×尺寸矩阵。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `name` | TEXT | 档位名称（如「头像」「半身」「全身」） |
+| `price` | REAL | 档位价格 |
+| `description` | TEXT | 说明 |
+| `example_image` | TEXT | 示例图路径 |
+| `work_days` | INTEGER | 工作天数 |
+| `sort_order` | INTEGER | 排序 |
+
+### artworks —— 作品集表
+
+**一句话**：画师店铺的作品展示（可设封面、可点赞）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `image_path` | TEXT | 作品图路径 |
+| `title` | TEXT | 标题 |
+| `sort_order` | INTEGER | 排序 |
+| `like_count` | INTEGER | 点赞数（v21） |
+| `is_cover` / `cover_order` | INTEGER | 是否封面 / 封面排序（v27/v31） |
+| `description` | TEXT | 自由描述（v37 F6） |
+| `created_at` | DATETIME | 创建时间 |
+
+### commission_rules —— 约稿须知表
+
+**一句话**：每个画师一份约稿须知（`artist_id` 唯一）。字段：`content`、`updated_at`。
+
+## 订单域
+
+### orders —— 订单主表
+
+**一句话**：订单核心状态机 + 价格汇总 + 排队位置。**金额全部整数分**。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_no` | TEXT UNIQUE | 订单号 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `tier_id` | INTEGER FK | 价格档位（SET NULL） |
+| `client_qq` / `client_name` | TEXT | 客户 QQ / 称呼 |
+| `description` | TEXT | 约稿需求描述 |
+| `priority` | TEXT CHECK | `high` / `medium` / `low` |
+| `status` | TEXT CHECK | **状态机**：`pending`(待确认) / `confirmed`(进行中) / `wip`(制作中) / `revision`(修改) / `done`(完成) / `delivered`(已交付) / `cancelled`(已取消) |
+| `source` | TEXT CHECK | `self`(客户自助下单) / `manual`(画师手动录单) |
+| `queue_position` | INTEGER | 排队位置 |
+| `queue_zone` | TEXT | 排队区（默认 `formal`） |
+| `current_stage_id` | INTEGER | 当前工作流节点（v14） |
+| `deadline` | DATETIME | 交付截止 |
+| `start_date` | TEXT | 开工日期（v29） |
+| `completed_at` | DATETIME | 完成时间 |
+| `price_snapshot` | REAL | 价格快照（下单时档位价） |
+| `total_price_cents` | INTEGER | 总价（分） |
+| `final_price_cents` | INTEGER | 最终价（分，含倍率/附加项/折扣后） |
+| `paid_total_cents` | INTEGER | 已收总额（分，v24 额度池） |
+| `discount_amount_cents` | INTEGER | 折扣金额（分） |
+| `usage_multiplier_id` / `rush_multiplier_id` | INTEGER | 用途倍率 / 加急倍率（v9） |
+| `quote_snapshot` | TEXT | 报价快照 JSON（v11） |
+| `focus_image_path` / `focus_image_mode` | TEXT | 焦点图（v11） |
+| `discount_code_id` | INTEGER | 使用的折扣码（v32） |
+| `created_at` / `updated_at` | DATETIME | 创建/更新时间 |
+
+### order_references —— 订单参考附件表
+
+**一句话**：客户/画师上传的参考文件（**附件模型**，不是外部链接）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_id` | INTEGER FK | 订单（CASCADE） |
+| `file_path` | TEXT | 文件路径 |
+| `original_name` | TEXT | 原始文件名 |
+| `file_size` | INTEGER | 文件大小（字节） |
+| `mime_type` | TEXT | MIME 类型 |
+| `source` | TEXT | `client` / `artist`（谁传的） |
+
+### order_notes —— 订单备注表
+
+**一句话**：订单交流备注（文字 + 可选图片）。字段：`content`、`created_by`（默认 artist）、`image_path`、`created_at`。
+
+### deliverables —— 交付文件表
+
+**一句话**：画师交付给客户的成品文件。字段：`file_path`、`original_name`、`file_size`、`created_at`。**没有 `title`、没有 `file_url` 列**（旧文档错误）。
+
+### order_extra_items —— 订单附加工作项表（SPEC-003）
+
+**一句话**：订单级临时附加工作项。字段：`name`、`description`、`price_cents`（整数分）、`created_at`。
+
+## 计价域
+
+### price_multipliers —— 价格倍率表（v9）
+
+**一句话**：两类倍率——`usage`(用途) 和 `rush`(加急)，对基础价乘系数。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `type` | TEXT CHECK | `usage` / `rush` |
+| `name` | TEXT | 倍率名 |
+| `multiplier` | REAL | 倍率系数 |
+| `description` / `sort_order` / `enabled` | - | 说明/排序/开关 |
+
+### order_price_breakdown —— 订单价格明细快照表（v9）
+
+**一句话**：下单时算价结果的明细快照（档位/增项/用途倍率/加急倍率各占多少）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_id` | INTEGER FK | 订单（CASCADE） |
+| `item_type` | TEXT CHECK | `tier`(档位) / `addon`(增项) / `usage`(用途) / `rush`(加急) |
+| `item_name` | TEXT | 明细名 |
+| `amount_cents` | INTEGER | 金额（分） |
+| `multiplier` | REAL | 倍率 |
+| `quantity` / `sort_order` | INTEGER | 数量/排序 |
+
+### order_price_entries —— 订单价格条目账本表（v39，REQ-025）
+
+**一句话**：**订单价格真相源**——订单总价 = 本表所有条目 `delta_cents` 之和。只追加、不删不改（服务层不提供 UPDATE/DELETE 路径）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_id` | INTEGER FK | 订单（CASCADE） |
+| `type` | TEXT CHECK | `base` / `manual_adjust` / `extra_item` / `discount_item` / `refund_item` / `extra_charge_after_close` / `extra_refund_after_close` |
+| `delta_cents` | INTEGER | 金额变动（分，正=加价 负=减价） |
+| `name` / `note` | TEXT | 名称/备注 |
+| `created_by` | TEXT | 操作者（默认 artist） |
+| `created_at` | DATETIME | 创建时间 |
+
+### addon_templates —— 增项库模板表（v36，替代 price_addons）
+
+**一句话**：画师级增项库（如「加复杂背景」「加急」），可按画风导入。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `name` | TEXT | 增项名 |
+| `control_type` | TEXT CHECK | `switch`(开关) / `quantity`(数量) / `radio`(单选) |
+| `pricing_mode` | TEXT CHECK | `fixed`(固定价) / `per_unit`(按单位) / `per_option`(按选项) |
+| `default_price` | REAL | 默认价 |
+| `options` / `unit_label` / `sort_order` | - | 选项 JSON / 单位标签 / 排序 |
+
+### art_styles / style_sizes / style_addons / size_addon_overrides —— 多画风定价模型（v36，REQ-023）
+
+**一句话**：这才是旧文档想写的「画风×尺寸」模型——在独立 4 张表里实现。
+
+- **art_styles（画风）**：`name` / `description` / `cover_image` / `sort_order` / `is_active`（挂在画师下）。
+- **style_sizes（尺寸）**：挂在画风下（`art_style_id` FK），`name` / `base_price`（基础价）/ `image`（独立上传图）/ `image_artwork_id`（从作品集挑，删作品自动置空）/ `description` / `work_days`（v37 补图/描述/天数）。
+- **style_addons（画风增项）**：`art_style_id` + `addon_template_id` 联合，从增项库导入；`is_enabled` / `price_override`（改价）/ `options_override`；`UNIQUE(art_style_id, addon_template_id)`。
+- **size_addon_overrides（尺寸覆盖）**：某尺寸对某增项的价格覆盖/隐藏；`UNIQUE(style_size_id, style_addon_id)`。
+
+### artwork_size_tags —— 作品↔尺寸多对多标注表（v37 F6）
+
+**一句话**：作品集图片可以标注「适用于哪些尺寸档位」，双向 CASCADE 删除。复合主键 `(artwork_id, style_size_id)`。
+
+## 工作流域
+
+### artist_workflow_stages —— 画师工作流节点表（v5 + v20）
+
+**一句话**：画师自定义的接单流程节点（需求确认→草稿→修改→交付），**收款节点 + 话术模板**模型。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `name` | TEXT | 节点名（如「需求确认」「草稿」） |
+| `description` | TEXT | 说明 |
+| `sort_order` | INTEGER | 排序 |
+| `takes_payment` | INTEGER | 是否收款节点（该节点触发收款） |
+| `basis_points` | INTEGER | 收款比例（万分之几） |
+| `speech_template` | TEXT | 通知话术模板（默认 `{客户名}，你的订单已{节点名}。`） |
+| `random_template` | INTEGER | 是否随机话术（v28） |
+
+### default_workflow_template —— 默认工作流模板表（v5）
+
+**一句话**：平台级默认流程模板（新画师可复制）。字段：`name` / `description` / `sort_order` / `takes_payment` / `basis_points`。**注意：该表不挂在画师下**（旧文档画了 `artist_id FK`，实际没有）。
+
+## 支付域
+
+### order_payment_installments —— 订单付款分期表（v5 + v40 锁价）
+
+**一句话**：一笔订单分几个阶段收款（如定金/尾款）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_id` | INTEGER FK | 订单（CASCADE） |
+| `label` | TEXT | 分期名 |
+| `basis_points` | INTEGER | 占总价比例（万分之几） |
+| `amount_cents` | INTEGER | 金额（分） |
+| `paid_cents` | INTEGER | 已付（分，v33） |
+| `status` | TEXT CHECK | `pending`(待付) / `paid`(已付) / `overdue`(逾期) |
+| `sort_order` / `requested_at` / `paid_at` | - | 排序/发起时间/支付时间 |
+| `locked` | INTEGER | 是否锁价（v40，REQ-025 节点完成/付清即锁，回退不解锁） |
+| `locked_reason` | TEXT CHECK | `completed`(节点完成) / `paidOff`(已付清) / `prev`(前置) |
+
+### order_payments —— 收款流水表（v24 额度池）
+
+**一句话**：每一笔实际收款记录，累加形成 `orders.paid_total_cents`（额度池）。字段：`order_id`、`installment_id`（可选关联分期）、`amount_cents`、`note`、`created_at`、`created_by`（默认 artist）。
+
+**旧文档的 `amount / method / paid_at` 字段不存在**——收款流水没有「支付方式」列（核对报告存疑项已对照 DDL 确认）。
+
+## 内容域
+
+### greeting_templates —— 问候语模板表（v6）
+
+**一句话**：分时段自动问候语（早上/下午/晚上/夜间/任意）。字段：`artist_id`（可空）、`text`、`time_slot`（CHECK：morning/afternoon/evening/night/any）、`is_enabled`。
+
+### guestbook_messages —— 留言板表（v22）
+
+**一句话**：店铺留言板，需要审核。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `nickname` / `content` | TEXT | 昵称/内容 |
+| `language` | TEXT | 语言（默认 zh-CN，v34） |
+| `status` | TEXT CHECK | `pending`(待审) / `approved`(通过) / `rejected`(拒绝) |
+| `artist_reply` / `replied_at` | - | 画师回复/时间 |
+| `deleted_by_admin` | INTEGER | 管理员删除标记 |
+
+### discount_codes —— 折扣码表（v32）
+
+**一句话**：画师级折扣码。`UNIQUE(artist_id, code)`。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `artist_id` | INTEGER FK | 画师（CASCADE） |
+| `code` | TEXT | 折扣码 |
+| `discount_type` | TEXT CHECK | `percent`(百分比) / `fixed`(固定金额) |
+| `discount_value` | REAL | 折扣值 |
+| `max_uses` / `used_count` | INTEGER | 上限/已用次数 |
+| `expires_at` / `enabled` | - | 过期时间/开关 |
+
+### social_platforms —— 社交平台字典表（v42，REQ-022 F2）
+
+**一句话**：画师外链展示的平台字典（约 24 个平台种子：微博/Bilibili/小红书/LOFTER/Pixiv/X/抖音/快手/豆瓣/QQ空间/YouTube/Instagram/Twitch/ArtStation/米画师/TikTok/DeviantArt/站酷/爱发电/Weasyl/Threads/Tumblr/Behance/网易云音乐）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `name` | TEXT | 平台名 |
+| `icon_key` | TEXT | simple-icons slug（无图标的为 NULL） |
+| `fallback_char` | TEXT | 无图标平台的单字兜底（如 LOFTER→L、抖音→抖、米画师→米、QQ空间→空） |
+| `match_domains` | TEXT | 匹配域名 JSON 数组 |
+| `sort_order` / `enabled` | INTEGER | 排序/开关 |
+
+## 平台域
+
+### platform_config —— 平台配置表
+
+**一句话**：全局键值对配置（如 `admin_qq` 管理员 QQ）。主键 `key`。
+
+### schema_migrations —— 迁移版本表
+
+**一句话**：记录已应用的迁移。字段：`version`（PK）/ `name` / `applied_at`。
+
+### order_activity_logs —— 订单操作日志表（v35，永久保留）
+
+**一句话**：订单全生命周期审计日志（状态变更/价格变更/附加项/收款/节点推进/备注更新）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `order_id` | INTEGER FK | 订单（CASCADE） |
+| `action_type` | TEXT CHECK | `status_change` / `price_change` / `extra_item` / `payment` / `stage_advance` / `note_update` |
+| `actor` | TEXT | 操作者（默认 artist） |
+| `detail_json` | TEXT | 变更详情 JSON |
+| `created_at` | DATETIME | 时间 |
+
+## 已删除表
+
+历史上存在、当前 schema **已删除**（迁移里 DROP 掉了）：
+
+| 表名 | 生命周期 | 删除原因 |
+|------|----------|----------|
+| `login_codes` | v13 建 → **v41 DROP** | 旧「登录码」机制废止（REQ-027 R7 一刀切）。初始 schema 里保留注释占位仅为维持迁移链完整 |
+| `price_addons` | v9 建 → **v43 DROP** | 旧增项模型冻结（v36 被 addon_templates/style_addons 取代，零写路径、零订单引用，用户拍板 DROP） |
+| `addon_tiers` | v9 建 → **v43 DROP** | 同上 |
+
+## 关键迁移里程碑
+
+| 版本 | 名称 | 做了什么 |
+|------|------|----------|
+| v5 | workflow_stages_and_default_template | 工作流节点 + 默认模板 + 付款分期 |
+| v6 | greeting_templates | 问候语模板 |
+| v9 | price_calculator | 价格计算器：倍率表 + 价格明细快照 + 旧增项表 |
+| v19 | batch_buffer_system | 批次/缓冲池系统 |
+| v20 | stage_speech_template | 节点话术模板 |
+| v22 | guestbook_messages | 留言板 |
+| v24 | quota_pool_paid_total | 收款额度池（paid_total_cents） |
+| v32 | discount_codes | 折扣码 |
+| v35 | order_activity_logs | 操作审计日志 |
+| v36 | multi_style_model | **多画风模型**：5 张新表 + 老数据迁移（price_tiers→style_sizes、price_addons→addon_templates、addon_tiers→style_addons） |
+| v37 | style_unify_sizes_artwork_tags_f5 | 尺寸补图/描述/天数、作品↔尺寸多对多、旧模型画师迁移 |
+| v38 | artists_status_check_add_hidden | 重建 artists 表补 hidden 状态（**事务外**，2026-08-04 事故教训） |
+| v39 | order_price_entries | **价格条目账本**（REQ-025 动态节点计价） |
+| v40 | installments_locked_columns | 分期锁价列（REQ-025 节点锁价） |
+| v41 | totp_login | **TOTP 登录**：artists 加 4 个 TOTP 列 + DROP login_codes（REQ-027） |
+| v42 | social_platforms | 社交平台字典 + 24 平台种子（REQ-022 F2） |
+| v43 | drop_addon_tables | DROP price_addons / addon_tiers（**事务外**，用户拍板） |
+
+## 索引
+
+`schemaIndexes` 在迁移之后执行（避免老库升级崩溃）：
+
+- 订单高频查询：`orders(artist_id, status)`、`orders(artist_id, queue_position)`、`orders(artist_id, deadline)`、`orders(artist_id, queue_zone)`、`orders(client_qq)`
+- 子表外键：`order_references(order_id)`、`deliverables(order_id)`、`order_notes(order_id)`、`order_extra_items(order_id)`、`order_payments(order_id)`、`order_price_entries(order_id, created_at)`
+- 画师/作品/留言：`artists(qq_number)`、`artworks(artist_id)`、`guestbook_messages(artist_id, status)`
+- 多画风模型：`addon_templates(artist_id, sort_order)`、`art_styles(artist_id, sort_order)`、`style_sizes(art_style_id, sort_order)`、`style_addons(art_style_id)`、`size_addon_overrides(style_size_id)`、`artwork_size_tags(style_size_id)`
+
+## 常见问题与维护要点
+
+- **金额为什么不都是整数分？** 大部分金额列已用 `*_cents` 整数分；`price_tiers.price`、`price_snapshot`、`price_multipliers.multiplier` 等仍是 REAL（展示/系数用）。改价相关代码优先看 `order_price_entries`。
+- **改表结构怎么做？** 新增迁移（version 44+）追加到 `MIGRATIONS` 数组，不要改历史迁移（已应用的库不会重跑）。加列用 `ALTER TABLE ADD COLUMN`（事务内安全）；改 CHECK / DROP 父表必须事务外 + 关 FK + 回读校验（对照 v38/v43 教训）。
+- **价格对不上？** 先查 `order_price_entries`（真相源），再看 `order_price_breakdown`（下单快照）与 `order_payment_installments`（收款计划）。
+- **迁移测试**：`migration-v38/v40/v41/v43.test.js` 覆盖重建表、加列、DROP 表等边界场景，新增迁移应配套测试。

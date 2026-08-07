@@ -1,12 +1,20 @@
-# 认证接口
+﻿# 认证接口
+
+> 本文按 `artist-commission` master 当前代码重写（2026-08-07，四号）。
+> 原「用户名/密码 + JWT」描述已废弃——当前是 **QQ 号 + TOTP 动态口令登录 + httpOnly Cookie 会话**（REQ-027）。
+> 重写依据：`repowiki-核对报告-20260806.md` 🔴 1-3 项过时点。
 
 <cite>
-**本文引用的文件**   
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
-- [server/src/app.js](file://server/src/app.js)
+**本文引用的文件**
+- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)（认证路由，3 个端点）
+- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)（登录校验/防爆破/会话 Token）
+- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)（TOTP 纯函数实现）
+- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)（鉴权中间件）
+- [server/src/features/admin/admin.routes.ts](file://server/src/features/admin/admin.routes.ts)（管理员 TOTP 绑定路由）
+- [server/src/app.ts](file://server/src/app.ts)（应用入口，注册全局错误处理）
+- [server/src/db/init.js](file://server/src/db/init.js)（管理员自举逻辑）
+- [server/src/db/seed.ts](file://server/src/db/seed.ts)（种子数据：admin_qq 默认 10003）
+- [server/scripts/totp-rebind.ts](file://server/scripts/totp-rebind.ts)（管理员 TOTP 丢失自救 CLI）
 - [server/tests/auth-token.test.js](file://server/tests/auth-token.test.js)
 - [server/tests/auth.service.test.js](file://server/tests/auth.service.test.js)
 - [server/tests/totp-login.test.js](file://server/tests/totp-login.test.js)
@@ -14,306 +22,263 @@
 </cite>
 
 ## 目录
-1. [简介](#简介)
-2. [项目结构](#项目结构)
-3. [核心组件](#核心组件)
-4. [架构总览](#架构总览)
-5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考虑](#性能考虑)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
+1. [人话总览](#人话总览)
+2. [三个登录相关端点](#三个登录相关端点)
+3. [会话机制（Cookie，不是 JWT）](#会话机制cookie不是-jwt)
+4. [TOTP 动态口令原理](#totp-动态口令原理)
+5. [TOTP 绑定与管理（管理员路由）](#totp-绑定与管理管理员路由)
+6. [防爆破与失败锁定](#防爆破与失败锁定)
+7. [开发模式开关 AUTH_DEV_MODE](#开发模式开关-auth_dev_mode)
+8. [管理员账号 bootstrap 与更换](#管理员账号-bootstrap-与更换)
+9. [管理员 TOTP 丢失自救（CLI）](#管理员-totp-丢失自救cli)
+10. [鉴权中间件与错误码](#鉴权中间件与错误码)
+11. [客户端对接要点](#客户端对接要点)
+12. [测试覆盖](#测试覆盖)
+13. [附录：端点速查](#附录端点速查)
 
-## 简介
-本文件为阿里画师约稿管理平台的认证系统提供完整的 RESTful API 文档，覆盖用户登录、登出、TOTP 双因素认证与令牌签发/校验、会话管理等关键能力。文档包含：
-- HTTP 方法与 URL 模式
-- 请求/响应结构与字段说明
-- JWT 令牌处理流程（签发、校验、刷新）
-- TOTP 验证流程（绑定、校验、二次认证）
-- 状态码与错误处理策略
-- 安全注意事项与客户端最佳实践（含刷新机制与会话管理建议）
+## 人话总览
 
-## 项目结构
-认证相关代码位于后端 server 模块的 features/auth 与 shared/middleware 中，路由定义、服务逻辑、TOTP 工具与鉴权中间件分工明确。应用入口负责挂载认证路由并启用全局中间件。
+**一句话**：画师/管理员不再用「账号密码」登录，而是用自己的 **QQ 号 + 手机上验证器 App（如 Google Authenticator、Microsoft Authenticator）里每 30 秒变化的 6 位数字** 登录。登录成功后浏览器里种下一个 **httpOnly Cookie**（`artist_token`），之后所有请求都靠这个 Cookie 识别身份。
 
-```mermaid
-graph TB
-A["app.js<br/>应用入口"] --> B["auth.routes.ts<br/>认证路由"]
-B --> C["auth.service.ts<br/>认证服务"]
-B --> D["totp.ts<br/>TOTP 工具"]
-B --> E["shared/middleware/auth.ts<br/>鉴权中间件"]
-C --> F["数据库/用户存储<br/>由服务层访问"]
-D --> F
+**为什么这样改**（需求 REQ-027）：旧机制靠短信/邮箱发登录码，有消息通道依赖和延迟；TOTP 动态口令是行业标准（RFC 6238），全程无消息通道，安全等级高。
+
+**三个关键事实**（与旧文档完全不同）：
+1. **没有**「用户名/密码登录 POST /api/auth/login」——该端点不存在。
+2. **没有** JWT Bearer 令牌 + 刷新令牌 + 登出黑名单——会话是 httpOnly Cookie，登出靠递增 `token_version` 让旧令牌全部失效。
+3. **没有**「客户端自助绑定 TOTP」——TOTP 绑定/确认/重置全部是**管理员路由**（需要管理员登录）。
+
+## 三个登录相关端点
+
+认证路由（`auth.routes.ts`）只有 3 个端点：**登录 / 当前用户 / 登出**。
+
+### POST /api/auth/verify —— 登录（唯一登录方式）
+
+QQ 号 + TOTP 动态口令登录，这是**唯一**登录端点。
+
+**请求体**（JSON）：
+
+| 字段 | 必填 | 规则 |
+|------|------|------|
+| `qqNumber` | 是 | 5-15 位纯数字，画师的 QQ 号 |
+| `code` | 是 | 6 位纯数字，验证器 App 当前显示的动态口令 |
+
+**限流**：同一 IP 10 次 / 5 分钟，超限返回 429。
+
+**成功响应（200）**：登录成功，服务端设置 httpOnly Cookie `artist_token`（7 天），响应体：
+
+```json
+{
+  "isAdmin": true,
+  "artist": {
+    "id": 1,
+    "name": "画师名",
+    "subdomain": "subdomain",
+    "qqNumber": "10003"
+  }
+}
 ```
 
-图表来源
-- [server/src/app.js](file://server/src/app.js)
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+- `isAdmin`：当前 QQ 号是否为管理员（等于 `platform_config.admin_qq`）。
+- 前端**不拿 token 存 localStorage**——身份在 Cookie 里，JS 读不到（安全设计，防 XSS 窃取）。
 
-章节来源
-- [server/src/app.js](file://server/src/app.js)
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
+**失败响应（401）**：统一 `{ code, error, detail? }` 结构：
 
-## 核心组件
-- 认证路由 auth.routes.ts：定义所有认证相关的 REST 端点，包括登录、登出、TOTP 绑定与校验等。
-- 认证服务 auth.service.ts：封装登录校验、JWT 签发、会话管理与业务规则。
-- TOTP 工具 totp.ts：实现 TOTP 密钥生成、二维码链接生成、验证码校验等。
-- 鉴权中间件 shared/middleware/auth.ts：解析并校验 JWT，注入当前用户上下文，保护受保护资源。
+| code | 含义 | 说明 |
+|------|------|------|
+| `TOTP_INVALID` | QQ 号或动态口令错误 | 故意不区分「QQ 号不存在」与「口令错」，防止探测注册状态 |
+| `TOTP_NOT_BOUND` | 尚未绑定动态口令 | 该画师还没绑定，需管理员绑定后才能登录 |
+| `TOTP_LOCKED` | 已临时锁定 | 连续错 5 次后锁定 15 分钟；`detail.remainingLockMs` 是剩余毫秒数 |
 
-章节来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+### GET /api/auth/me —— 当前登录用户
 
-## 架构总览
-认证流程采用“路由 → 服务 → 工具/存储”的分层设计。登录成功后签发 JWT；后续请求通过中间件校验令牌并注入用户信息。TOTP 作为可选的第二步认证，在登录或敏感操作时触发。
+需要已登录（Cookie 或 Bearer）。返回当前画师公开信息 + `isAdmin` 标记：
 
-```mermaid
-sequenceDiagram
-participant Client as "客户端"
-participant Routes as "认证路由"
-participant Service as "认证服务"
-participant TOTP as "TOTP 工具"
-participant Store as "数据存储"
-participant MW as "鉴权中间件"
-Client->>Routes : "POST /api/auth/login"
-Routes->>Service : "validateCredentials()"
-Service->>Store : "查询用户"
-Store-->>Service : "用户记录"
-Service->>Service : "签发JWT(含角色/过期)"
-Service-->>Routes : "{token, mfaRequired?}"
-Routes-->>Client : "登录结果"
-Client->>Routes : "POST /api/auth/totp/verify"
-Routes->>Service : "verifyTOTP()"
-Service->>TOTP : "校验TOTP码"
-TOTP-->>Service : "校验结果"
-Service-->>Routes : "成功/失败"
-Routes-->>Client : "TOTP 校验结果"
-Client->>MW : "携带Authorization : Bearer <token>"
-MW->>MW : "解析并校验JWT"
-MW-->>Client : "放行或拒绝"
+```json
+{
+  "id": 1,
+  "name": "画师名",
+  "subdomain": "subdomain",
+  "qqNumber": "10003",
+  "status": "open",
+  "...": "其他公开字段（敏感列如 totp_secret 已剔除）",
+  "isAdmin": true
+}
 ```
 
-图表来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+前端刷新页面时以此接口为准恢复登录态。
 
-## 详细组件分析
+### POST /api/auth/logout —— 登出
 
-### 认证路由（auth.routes.ts）
-- 职责：定义认证相关 REST 端点，接收请求参数，调用服务层完成业务逻辑，返回统一响应。
-- 典型端点：
-  - POST /api/auth/login：用户名/密码登录，必要时返回需要 TOTP 二次认证的标志。
-  - POST /api/auth/logout：注销会话，使令牌失效（服务端可维护黑名单）。
-  - POST /api/auth/totp/bind：绑定 TOTP 设备，返回二维码或密钥供客户端配置。
-  - POST /api/auth/totp/verify：提交 TOTP 验证码进行校验。
-  - GET /api/auth/me：获取当前用户信息（需鉴权）。
-- 响应格式：统一 JSON，包含 data、error、message 等字段，便于前端处理。
+需要已登录。**真正的登出**：服务端递增该画师的 `token_version`，使当前及所有旧 Cookie/令牌立即失效，然后清掉 `artist_token` Cookie。不是黑名单机制——旧令牌不是被记录为黑名单，而是因为版本号对不上直接被拒。
 
-章节来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
+## 会话机制（Cookie，不是 JWT）
 
-### 认证服务（auth.service.ts）
-- 职责：实现登录校验、JWT 签发、令牌刷新、会话管理、TOTP 校验等业务逻辑。
-- 关键点：
-  - 登录：校验凭据，生成短期 JWT，必要时标记 MFA 未通过。
-  - 登出：将令牌加入黑名单或清除会话，防止重用。
-  - TOTP：校验一次性口令，支持窗口容忍与重试限制。
-  - 刷新：基于刷新令牌或短期令牌续期，避免频繁重新登录。
-- 错误处理：对无效凭据、MFA 失败、令牌过期等场景返回明确状态码与消息。
+### 会话载体：httpOnly Cookie
 
-章节来源
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
+- 名称：`artist_token`
+- 有效期：7 天
+- 属性：`httpOnly`（JS 不可读）、`sameSite=lax`、生产环境 `secure`（仅 HTTPS 传输）
+- 读取优先级：**Cookie 优先**；`Authorization: Bearer <token>` 仅作测试/旧客户端兜底（`extractToken` 逻辑）
 
-### TOTP 工具（totp.ts）
-- 职责：生成 TOTP 密钥、构建二维码链接、校验 TOTP 验证码。
-- 特性：
-  - 支持标准 TOTP 算法（如 RFC 6238），默认时间步长与容差窗口。
-  - 提供密钥编码（Base32）与二维码生成辅助方法。
-  - 校验时考虑时钟漂移，允许前后若干步长的容差。
+### 令牌本身：HMAC 签名（无状态）
 
-章节来源
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
+令牌格式：`payload.sig`，payload 是 Base64URL 编码的 `{ id, t, v }`：
 
-### 鉴权中间件（shared/middleware/auth.ts）
-- 职责：从请求头解析 Authorization: Bearer <token>，校验 JWT 签名与有效期，注入当前用户到请求上下文。
-- 行为：
-  - 令牌缺失或无效：返回 401 或未授权。
-  - 令牌已过期：根据策略返回 401 或提示刷新。
-  - 成功：将用户信息附加到请求对象，供下游路由使用。
+- `id`：画师 id
+- `t`：签发时间（7 天 TTL 判断依据）
+- `v`：token_version（服务端主动失效手段）
 
-章节来源
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+签名用 `SESSION_SECRET`（HMAC-SHA256，`timingSafeEqual` 防时序攻击）。**生产环境必须设置 `SESSION_SECRET` 环境变量**，否则启动即崩溃；开发环境未设置时每次启动生成随机密钥（意味着开发重启后旧会话失效）。
 
-### 应用入口（app.js）
-- 职责：初始化 Fastify 应用，注册全局中间件（如速率限制、日志、CORS），挂载认证路由与其他功能路由。
-- 认证集成：确保鉴权中间件在受保护路由前生效，保证请求链路安全。
+### 主动失效：token_version
 
-章节来源
-- [server/src/app.js](file://server/src/app.js)
+登出（`/api/auth/logout`）时递增 `artists.token_version`。中间件校验时若会话里的 `v` ≠ 数据库当前 `token_version`，返回 `TOKEN_REVOKED`。这一个字段实现了「踢下线」「登出全部设备」能力。
 
-## 依赖关系分析
-认证子系统内部依赖清晰：路由依赖服务，服务依赖 TOTP 工具与数据层，中间件独立于业务逻辑但被路由链使用。测试覆盖登录、TOTP、令牌生命周期等关键路径。
+## TOTP 动态口令原理
 
-```mermaid
-graph LR
-R["auth.routes.ts"] --> S["auth.service.ts"]
-S --> T["totp.ts"]
-R --> M["shared/middleware/auth.ts"]
-A["app.js"] --> R
-TST1["tests/auth-token.test.js"] --> S
-TST2["tests/auth.service.test.js"] --> S
-TST3["tests/totp-login.test.js"] --> R
-TST4["tests/totp.test.js"] --> T
+`totp.ts` 是零依赖纯函数实现（Node 内置 crypto），遵循 RFC 6238 / RFC 4226 / RFC 4648：
+
+| 参数 | 值 | 人话 |
+|------|-----|------|
+| 时间步长 | 30 秒 | 验证器里数字每 30 秒变一次 |
+| 码位数 | 6 位 | 标准动态口令长度 |
+| 算法 | HMAC-SHA1 | RFC 6238 默认算法 |
+| 校验窗口 | ±1 个时间步 | 容忍手机时钟前后漂移约 30 秒 |
+| 密钥 | 20 字节随机 → Base32 编码 32 字符 | 绑定后画师手机与服务器共享这个密钥 |
+
+生成 `otpauth://` URI 供验证器扫码（issuer 为「绘约」）：
+
+```
+otpauth://totp/绘约:<QQ号>?secret=<密钥>&issuer=绘约&algorithm=SHA1&digits=6&period=30
 ```
 
-图表来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
-- [server/src/app.js](file://server/src/app.js)
-- [server/tests/auth-token.test.js](file://server/tests/auth-token.test.js)
-- [server/tests/auth.service.test.js](file://server/tests/auth.service.test.js)
-- [server/tests/totp-login.test.js](file://server/tests/totp-login.test.js)
-- [server/tests/totp.test.js](file://server/tests/totp.test.js)
+## TOTP 绑定与管理（管理员路由）
 
-章节来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
-- [server/src/app.js](file://server/src/app.js)
-- [server/tests/auth-token.test.js](file://server/tests/auth-token.test.js)
-- [server/tests/auth.service.test.js](file://server/tests/auth.service.test.js)
-- [server/tests/totp-login.test.js](file://server/tests/totp-login.test.js)
-- [server/tests/totp.test.js](file://server/tests/totp.test.js)
+**绑定流程由管理员操作**（需要管理员登录，`requireAdmin`），画师本人不能自助绑定——这是安全设计：绑定涉及身份确认，由管理员当面/线下完成。
 
-## 性能考虑
-- JWT 校验开销低，建议在中间件中缓存公钥或密钥元信息以减少重复计算。
-- TOTP 校验应限制尝试次数与频率，避免暴力破解。
-- 登录与 TOTP 接口应启用速率限制与防重放策略。
-- 短令牌 + 刷新令牌组合可降低频繁登录带来的压力。
+三个端点（都在 `admin.routes.ts`）：
 
-[本节为通用指导，不直接分析具体文件]
+### 1. POST /api/admin/artists/:id/totp/bind-init —— 绑定第一步：生成二维码
 
-## 故障排查指南
-常见问题与定位要点：
-- 401 未授权：检查 Authorization 头是否携带有效 Bearer 令牌；确认令牌未过期且未被拉黑。
-- 403 禁止访问：用户权限不足或角色不匹配，检查用户角色与资源访问控制。
-- 429 限流：登录或 TOTP 接口触发速率限制，稍后重试或降低请求频率。
-- TOTP 校验失败：确认设备时间同步、验证码正确且在容差窗口内；检查绑定状态。
-- 会话异常：登出后仍访问受保护资源，检查服务端令牌黑名单与会话清理逻辑。
+- 管理员为指定画师生成 TOTP 密钥 + `otpauth` 二维码（data URL，220px），**密钥立即入库但标记未验证**（`totp_verified=0`）。
+- 返回 `{ secret?, otpauthUri, qrDataUrl }`。
+- **重复调用 = 覆盖旧密钥**，画师手机上旧绑定立即失效（须重新扫码）。
+- 开发模式（`AUTH_DEV_MODE=true`）额外返回 `_dev_secret` 密钥明文，方便开发/测试/演示时手动录入验证器。
 
-章节来源
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/tests/auth-token.test.js](file://server/tests/auth-token.test.js)
-- [server/tests/totp.test.js](file://server/tests/totp.test.js)
+### 2. POST /api/admin/artists/:id/totp/bind-confirm —— 绑定第二步：确认
 
-## 结论
-认证系统通过清晰的分层设计与严格的中间件校验，提供了安全的登录、登出、TOTP 双因素认证与令牌管理能力。结合短令牌与刷新机制，可在保障安全的同时提升用户体验。建议在生产环境启用速率限制、审计日志与令牌黑名单，以增强整体安全性与可观测性。
+- 管理员输入画师报来的 6 位动态码，服务端用刚才的密钥校验。
+- 校验通过 → `totp_verified=1`，绑定完成，画师从此可以登录。
+- 失败 → 400 `TOTP_BIND_INVALID`「动态口令错误，请让画师确认验证器上当前显示的 6 位码」。
+- 绑定失败**不计数不锁定**（只有管理员能调，管理员身份本身可信）。
 
-[本节为总结，不直接分析具体文件]
+### 3. POST /api/admin/artists/:id/totp/reset —— 重置绑定
 
-## 附录
+- 管理员重置指定画师的绑定：清空 `totp_secret`、`totp_verified=0`，**旧密钥立即失效**，画师须重新绑定才能登录。
+- 适用于：画师换手机、验证器丢失、怀疑泄露等场景。
 
-### API 端点清单与交互说明
-- POST /api/auth/login
-  - 用途：用户登录，返回 JWT 与是否需要 TOTP 的标志。
-  - 请求体：用户名、密码。
-  - 响应：{ token, mfaRequired } 或错误信息。
-  - 状态码：200 成功，401 凭据无效，429 限流。
+## 防爆破与失败锁定
 
-- POST /api/auth/logout
-  - 用途：注销会话，使令牌失效。
-  - 请求体：可选 token 或从请求头自动解析。
-  - 响应：成功或错误信息。
-  - 状态码：200 成功，401 未认证。
+`auth.service.ts` 里两个常量：
 
-- POST /api/auth/totp/bind
-  - 用途：绑定 TOTP 设备，返回二维码或密钥。
-  - 请求体：用户标识。
-  - 响应：{ secret, qrUrl } 或错误信息。
-  - 状态码：200 成功，401 未认证，403 无权限。
+```js
+TOTP_MAX_ATTEMPTS = 5        // 连续错误 5 次
+TOTP_LOCK_DURATION_MS = 15分钟 // 锁定 15 分钟
+```
 
-- POST /api/auth/totp/verify
-  - 用途：提交 TOTP 验证码进行校验。
-  - 请求体：{ code }。
-  - 响应：{ success } 或错误信息。
-  - 状态码：200 成功，400 参数错误，401 未认证，403 校验失败。
+规则（`verifyTotpLogin`）：
 
-- GET /api/auth/me
-  - 用途：获取当前用户信息。
-  - 请求头：Authorization: Bearer <token>。
-  - 响应：{ user } 或错误信息。
-  - 状态码：200 成功，401 未认证。
+- **锁定期间任何尝试都拒绝**——包括正确的动态码（防止攻击者拿正确码撞锁）。
+- 达到阈值后返回 `TOTP_LOCKED`，`detail.remainingLockMs` 告诉前端还剩多久。
+- 登录成功清零失败计数。
+- **未注册的 QQ 号返回与「口令错误」完全相同的响应**（`QQ号或动态口令错误`），不暴露该 QQ 是否注册过（防枚举）。
 
-章节来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
+## 开发模式开关 AUTH_DEV_MODE
 
-### JWT 令牌处理与刷新机制
-- 签发：登录成功后签发短期 JWT，包含用户标识与角色。
-- 校验：中间件解析并验证签名与有效期。
-- 刷新：基于刷新令牌或短期令牌续期，避免频繁登录。
-- 失效：登出时将令牌加入黑名单或清除会话。
+- 语义：**显式**设置 `AUTH_DEV_MODE=true` 才开启开发模式（不再靠 `NODE_ENV` 推断）。
+- 作用：`bind-init` 响应附带 TOTP 密钥明文（`_dev_secret`），方便开发/测试/演示时把密钥手动录入验证器 App。
+- **安全红线**：`AUTH_DEV_MODE=true` 且 `NODE_ENV=production` → **启动即抛错**（fail-fast）。原因：开发模式会让密钥明文随接口响应暴露，等于 2FA 可被绕过，靠「约定生产必须配 false」不够，误配即高危。
 
-章节来源
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+## 管理员账号 bootstrap 与更换
 
-### TOTP 验证流程
-- 绑定：生成密钥与二维码，供客户端配置 TOTP 应用。
-- 校验：提交验证码，服务端校验是否在容差窗口内。
-- 二次认证：登录或敏感操作时要求输入 TOTP 码。
+### 首次部署自动创建管理员（init.js 自举）
 
-章节来源
-- [server/src/features/auth/totp.ts](file://server/src/features/auth/totp.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
+- 数据库初始化时在 `platform_config` 写入 `admin_qq` 默认空值。
+- 若设置了 `ADMIN_QQ` 环境变量：把它写入 `platform_config.admin_qq`（仅当当前值为空时写入，不覆盖运行时更换的值），并确保该 QQ 的画师账号存在。
+- **生产 fail-fast**：`NODE_ENV=production` 且既没有 `ADMIN_QQ` 环境变量、`platform_config.admin_qq` 又为空或对应画师不存在 → **启动即抛错**，不静默死锁到登录时才暴露（TOTP 上线后无管理员 = 无人能绑定/登录）。
+- 种子数据（`seed.ts`）：`INSERT OR REPLACE` 确保 `admin_qq='10003'`（开发默认管理员 QQ）。
 
-### 客户端实现示例与最佳实践
-- 登录流程：
-  - 调用登录接口，保存返回的 token。
-  - 若 mfaRequired 为真，引导用户输入 TOTP 码并调用校验接口。
-- 令牌刷新：
-  - 在 token 即将过期前发起刷新请求，更新本地存储的 token。
-- 会话管理：
-  - 登出时调用登出接口并清除本地 token。
-  - 监听网络错误与 401 响应，自动跳转登录页。
-- 安全建议：
-  - 使用 HTTPS 传输。
-  - 避免在 localStorage 长期存储敏感信息，优先使用内存或 HttpOnly Cookie。
-  - 实施速率限制与失败计数，防止暴力破解。
+### 更换管理员：POST /api/admin/transfer
 
-章节来源
-- [server/src/features/auth/auth.routes.ts](file://server/src/features/auth/auth.routes.ts)
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+- 需要**连续两次 TOTP 动态口令验证**：先验证当前管理员的动态码（证明你是管理员），再验证新管理员的动态码（证明对方接受且已绑定）。
+- 双方都须已绑定 TOTP；任一步失败全部回滚，失败计数不被事务回滚（防爆破依然生效）。
+- 这是「更换管理员」的正式途径（旧登录码机制已废止）。
 
-### 错误处理策略
-- 统一错误响应结构，包含 code、message、details。
-- 区分业务错误与安全错误（如 401、403、429）。
-- 记录关键错误日志，便于审计与排障。
+## 管理员 TOTP 丢失自救（CLI）
 
-章节来源
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+**场景**：管理员自己手机丢失 / 验证器 App 删除 / 换手机，登不进后台——而后台重置入口本身要登录才能用（死锁）；或新部署管理员从未绑定。
 
-### 安全注意事项
-- 强制 HTTPS，禁用明文传输。
-- 设置合理的令牌过期时间与刷新策略。
-- 启用速率限制与账户锁定策略。
-- 对 TOTP 绑定与校验进行严格输入校验与重试限制。
-- 定期轮换密钥与审计登录行为。
+**解决**：服务器本机执行（`server/` 目录下）：
 
-章节来源
-- [server/src/features/auth/auth.service.ts](file://server/src/features/auth/auth.service.ts)
-- [server/src/shared/middleware/auth.ts](file://server/src/shared/middleware/auth.ts)
+```bash
+npm run totp:rebind -- <QQ号>
+# 例：npm run totp:rebind -- 10003
+```
+
+一步完成「重置旧绑定 + 生成新绑定」：
+
+1. 新密钥直接入库并标记已绑定（`totp_verified=1`）；
+2. 输出 `otpauth` URI + 密钥明文 + 二维码 PNG（保存到 `temp/totp-rebind-<QQ号>.png`）；
+3. 尽力而为的端到端验证：若服务在 `localhost:3000` 运行，自动用新密钥算一个动态码调用登录接口验证可用。
+
+**安全边界**：只有能物理操作服务器的人可用（不经网络、不开端口）；执行后旧密钥立即失效，旧验证器上的动态码全部作废。
+
+## 鉴权中间件与错误码
+
+`shared/middleware/auth.ts` 提供两个守卫：
+
+- `requireAuth`：画师登录校验。
+- `requireAdmin`：管理员权限校验（在 `requireAuth` 基础上加「QQ 号 = 管理员 QQ」判断）。
+
+校验顺序：取 token（Cookie 优先）→ 验签/过期 → 查画师 → 软删检查 → token_version 比对 → （管理员）管理员判定。
+
+| 错误码 | HTTP | 含义 |
+|--------|------|------|
+| `NOT_LOGGED_IN` | 401 | 没有令牌（未登录） |
+| `SESSION_EXPIRED` | 401 | 令牌无效/过期 |
+| `ACCOUNT_NOT_FOUND` | 401 | 画师账号不存在 |
+| `ACCOUNT_DISABLED` | 401 | 账号已停用（软删） |
+| `TOKEN_REVOKED` | 401 | 登录状态已失效（token_version 不匹配，如已登出） |
+| `ADMIN_REQUIRED` | 403 | 需要管理员权限 |
+
+## 客户端对接要点
+
+**人话版对接步骤**：
+
+1. **登录页**：画师输入 QQ 号 + 验证器 App 当前 6 位码 → `POST /api/auth/verify` → 成功则 Cookie 自动种下（前端什么都不用存）→ 用响应的 `isAdmin` 决定跳管理后台还是画师后台。
+2. **刷新页面**：调 `GET /api/auth/me`，能拿到数据 = 已登录；401 = 未登录，跳登录页。
+3. **登出**：调 `POST /api/auth/logout`，服务端把旧会话全部作废。
+4. **注意**：不要再往 localStorage 存 token；所有请求靠 Cookie 自动携带（同源）。
+
+## 测试覆盖
+
+| 测试文件 | 覆盖点 |
+|----------|--------|
+| `tests/totp.test.js` | TOTP 纯函数：Base32 编解码、动态码计算、±1 窗口校验 |
+| `tests/totp-login.test.js` | 登录端点：成功、口令错、未绑定、锁定、限流 |
+| `tests/auth-token.test.js` | 会话令牌：签发、验签、过期、token_version 失效 |
+| `tests/auth.service.test.js` | 认证服务层逻辑（含防爆破计数/锁定） |
+
+## 附录：端点速查
+
+| 方法 | 路径 | 鉴权 | 用途 |
+|------|------|------|------|
+| POST | `/api/auth/verify` | 无 | QQ + TOTP 动态口令登录（唯一登录方式） |
+| GET | `/api/auth/me` | requireAuth | 当前用户信息 + isAdmin |
+| POST | `/api/auth/logout` | requireAuth | 登出（递增 token_version 使旧会话全失效） |
+| POST | `/api/admin/artists/:id/totp/bind-init` | requireAdmin | 生成 TOTP 密钥+二维码（绑定第一步） |
+| POST | `/api/admin/artists/:id/totp/bind-confirm` | requireAdmin | 校验画师报的 6 位码（绑定第二步） |
+| POST | `/api/admin/artists/:id/totp/reset` | requireAdmin | 重置绑定（旧密钥立即失效） |
+| POST | `/api/admin/transfer` | requireAdmin | 更换管理员（需当前+新管理员两次动态码） |
+
+**不存在的端点**（旧文档误写，已确认代码里没有）：`POST /api/auth/login`、`POST /api/auth/totp/bind`、`POST /api/auth/totp/verify`。认证相关绑定/重置全部走管理员路由。
