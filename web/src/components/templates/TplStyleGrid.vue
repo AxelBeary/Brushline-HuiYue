@@ -454,6 +454,8 @@ function goOrder() {
   }
   .tpl-style-display {
     touch-action: pan-y;
+    width: 100%;
   }
+  .tpl-style-showcase { align-items: stretch; }
 }
 </style>
