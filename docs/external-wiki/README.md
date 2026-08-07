@@ -1,4 +1,4 @@
-# repowiki 外部知识库归档
+﻿# repowiki 外部知识库归档
 
 > 归档日期：2026-08-06 · 归档人：一号
 > 来源：A 测用户贡献的整套项目 wiki（`C:\Users\qly19\Desktop\repowiki\`，约 118 篇，原目录保留不删除）
@@ -42,3 +42,16 @@ A 测用户为本项目编写了整套 wiki（架构/API/数据库/前端/后端
 2. **P0 已完成**：「认证接口」「数据库模式设计」及 P0 批「快速开始指南」「生产部署」「环境配置管理」共 5 篇已按当前 master 重写（TOTP 登录 / cookie 会话 / 29 张表实际 DDL / index.ts+seed.ts 入口 / 删虚构变量 / 纯 SQLite），交付报告见 `docs/comms/02-to-01-repowiki重写-交付.md` 与 `docs/comms/04-to-01-repowiki-P0重写-交付-20260807.md`
 3. **P2 已完成**：外部 13 处 🟡（认证 6 + 非认证 7）已按路线 B 在仓库内维护修订版（13 篇 `wiki-*.md`），交付报告见 `docs/comms/04-to-01-repowiki外部13处修补-交付-20260807.md`
 4. 若用户贡献者愿意，可把核对报告反馈给 ta 供修订
+
+## P2 非认证主题抽样（2026-08-07 四号修订，见 docs/comms/04-to-01-repowiki-P2非认证抽样-交付-20260807.md）
+
+| 文件 | 说明 |
+|------|------|
+| wiki-Docker容器化部署.md | 已按 master 修订：app/index .js→.ts（TS 迁移）、entrypoint 指向 src/index.ts、compose 3000 端口已注释（v0.42 拍板）、Caddyfile encode zstd gzip、SENTRY_DSN_BACKEND 命名 |
+| wiki-构建与部署系统.md | 已按 master 修订：后端 100% TS（原文「TS/JS 混编」过时）、CI 门禁补齐（oxlint/typecheck/check:i18n） |
+| wiki-CICD流水线.md | 已按 master 修订：server job 含 oxlint+typecheck、web job 含 check:i18n（原文漏） |
+| wiki-容器编排.md | 已按 master 修订：app/connection .js→.ts、entrypoint src/index.ts、ports 3000 已注释、SENTRY_DSN→SENTRY_DSN_BACKEND |
+| wiki-环境配置.md | 已按 master 修订：index/app/connection .js→.ts、entrypoint src/index.ts、SIGN_SECRET 虚构项标注（文件签名密钥实为 SESSION_SECRET） |
+| wiki-性能监控与分析.md | 已按 master 修订：app.js→app.ts、CI 门禁补齐；Sentry 环境变量命名原文已正确 |
+| wiki-常见问题解决.md | 已按 master 修订：connection/app/index .js→.ts；正文 TOTP/上传/订单描述与 master 吻合 |
+| wiki-持续集成与部署.md | 已按 master 修订：CI 门禁补齐（oxlint/typecheck/check:i18n） |
