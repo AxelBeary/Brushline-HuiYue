@@ -276,6 +276,8 @@ function goOrder() {
   .tpl-tier-display {
     /* 滑动区域 */
     touch-action: pan-y;
+    width: 100%;
   }
+  .tpl-tier-showcase { align-items: stretch; }
 }
 </style>
