@@ -100,7 +100,7 @@ onMounted(() => load())
 /* v0.38 第二批: 纸墨 token（第一批白名单内补漏；主文案数字墨色不上色铁律） */
 /* 克制动效批（2026-08-07）：卡片 hover 微浮起 + 按压，≤0.2s */
 .artist-scope .slot-card { background: var(--card); cursor: pointer; transition: border-color 0.2s, transform 0.15s ease-out, box-shadow 0.2s; }
-.slot-card:hover { border-color: color-mix(in srgb, var(--hq) 50%, transparent); transform: translateY(-2px); box-shadow: var(--sh-2); }
+.slot-card:hover { border-color: color-mix(in srgb, var(--hq) 50%, transparent); box-shadow: var(--sh-2); }
 .slot-card:active { transform: translateY(-2px) scale(0.98); }
 .slot-arrow { color: var(--ink3); font-size: calc(var(--font-scale, 1) * 16px); }
 
