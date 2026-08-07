@@ -139,7 +139,7 @@ function goOrder() {
   border-radius: 10px;
   background: var(--pal-surface);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
   text-align: left;
   font-family: inherit;
 }
