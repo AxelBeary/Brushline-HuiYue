@@ -6,7 +6,7 @@
 
 <cite>
 **本文引用的文件**
-- [server/src/db/init.js](file://server/src/db/init.js)（schema 建表 + MIGRATIONS 迁移数组，最新 v43）
+- [server/src/db/init.js](file://server/src/db/init.js)（schema 建表 + MIGRATIONS 迁移数组，最新 v45）
 - [server/src/types/entities.ts](file://server/src/types/entities.ts)（TS 类型定义）
 - [server/src/utils/order-status.ts](file://server/src/utils/order-status.ts)（订单状态常量）
 - [server/src/features/order/order-workflow.service.ts](file://server/src/features/order/order-workflow.service.ts)（订单工作流服务）
@@ -16,6 +16,7 @@
 - [server/tests/migration-v40.test.js](file://server/tests/migration-v40.test.js)
 - [server/tests/migration-v41.test.js](file://server/tests/migration-v41.test.js)
 - [server/tests/migration-v43.test.js](file://server/tests/migration-v43.test.js)
+- [server/tests/migration-v45.test.js](file://server/tests/migration-v45.test.js)
 </cite>
 
 ## 目录
@@ -29,14 +30,15 @@
 8. [支付域](#支付域)
 9. [内容域](#内容域)
 10. [平台域](#平台域)
-11. [已删除表](#已删除表)
-12. [关键迁移里程碑](#关键迁移里程碑)
-13. [索引](#索引)
-14. [常见问题与维护要点](#常见问题与维护要点)
+11. [埋点域](#埋点域)
+12. [已删除表](#已删除表)
+13. [关键迁移里程碑](#关键迁移里程碑)
+14. [索引](#索引)
+15. [常见问题与维护要点](#常见问题与维护要点)
 
 ## 人话总览
 
-**一句话**：数据存在 SQLite 单文件里（`data/commission.db`），共 **29 张表**。所有表结构由 `server/src/db/init.js` 的 `schema` 常量一次性建出（`CREATE TABLE IF NOT EXISTS`），**表结构演进靠「版本化迁移」**——`MIGRATIONS` 数组里按版本号排列的迁移脚本，当前最新版本 **v43**。
+**一句话**：数据存在 SQLite 单文件里（`data/commission.db`），schema 常量一次性建出 **29 张表**（v44 迁移另建 `events` / `anon_tokens` 两张埋点表，启动后实际 31 张）。所有表结构由 `server/src/db/init.js` 的 `schema` 常量建出（`CREATE TABLE IF NOT EXISTS`），**表结构演进靠「版本化迁移」**——`MIGRATIONS` 数组里按版本号排列的迁移脚本，当前最新版本 **v45**。
 
 **三大模型变化**（与旧文档完全不同的地方）：
 
@@ -63,7 +65,7 @@
 - **v38**（重建 artists 表补 `hidden` 状态）：SQLite 改 CHECK 约束只能重建表。重建时 DROP 父表会触发子表 `ON DELETE CASCADE` 清空全部子表数据——所以 v38 必须**事务外**执行，且先 `PRAGMA foreign_keys = OFF` 并**回读校验真的关了**才 DROP（2026-08-04 事故根因：PRAGMA foreign_keys 在事务内是 no-op）。
 - **v43**（DROP 旧增项表）：同样必须事务外 + 关 FK + 回读校验；DROP 后跑 `foreign_key_check` 确认零悬空才恢复 FK。
 
-## 29 张表总览
+## 29 张表总览（schema 常量建表）
 
 | # | 表名 | 一句话职责 | 引入版本 |
 |---|------|-----------|----------|
@@ -407,6 +409,36 @@
 | `detail_json` | TEXT | 变更详情 JSON |
 | `created_at` | DATETIME | 时间 |
 
+## 埋点域
+
+### events —— 业务事件表（v44，REQ-033）
+
+**一句话**：业务埋点事件（页面访问/操作行为），画师/管理员统计看板数据源（TrackingAnalytics.vue）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `name` | TEXT | 事件名（如 `page_view`） |
+| `ts` | INTEGER | 事件时间戳（毫秒） |
+| `version` | INTEGER | 事件版本（默认 1，预留结构演进） |
+| `artist_id` | INTEGER | 画师 id（可空，未登录/匿名事件为 NULL） |
+| `anon_id` | INTEGER | 匿名凭证 id（未登录时关联 anon_tokens） |
+| `payload_json` | TEXT | 事件载荷 JSON（默认 `{}`） |
+| `created_at` | DATETIME | 创建时间 |
+
+索引：`idx_events_name_ts ON events(name, ts)`（v44 建）、`idx_events_artist_ts ON events(artist_id, ts)`（v45 建，画师/管理员统计防全表扫描）。
+
+### anon_tokens —— 匿名凭证表（v44，REQ-033）
+
+**一句话**：未登录访客的匿名身份凭证，让匿名事件也能按「同一访客」聚合。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增主键 |
+| `token` | TEXT UNIQUE | 匿名凭证值 |
+| `created_at` | DATETIME | 创建时间 |
+| `last_seen_at` | DATETIME | 最近活跃时间 |
+
 ## 已删除表
 
 历史上存在、当前 schema **已删除**（迁移里 DROP 掉了）：
@@ -438,19 +470,22 @@
 | v41 | totp_login | **TOTP 登录**：artists 加 4 个 TOTP 列 + DROP login_codes（REQ-027） |
 | v42 | social_platforms | 社交平台字典 + 24 平台种子（REQ-022 F2） |
 | v43 | drop_addon_tables | DROP price_addons / addon_tiers（**事务外**，用户拍板） |
+| v44 | tracking_events_anon_tokens | **业务埋点**（REQ-033）：events + anon_tokens 表 + idx_events_name_ts |
+| v45 | tracking_events_artist_index | 埋点统计索引：events(artist_id, ts)（REQ-033 统计页防全表扫描） |
 
 ## 索引
 
-`schemaIndexes` 在迁移之后执行（避免老库升级崩溃）：
+`schemaIndexes` 在迁移之后执行（避免老库升级崩溃；埋点表两个索引在 v44/v45 迁移内创建，见埋点域）：
 
 - 订单高频查询：`orders(artist_id, status)`、`orders(artist_id, queue_position)`、`orders(artist_id, deadline)`、`orders(artist_id, queue_zone)`、`orders(client_qq)`
 - 子表外键：`order_references(order_id)`、`deliverables(order_id)`、`order_notes(order_id)`、`order_extra_items(order_id)`、`order_payments(order_id)`、`order_price_entries(order_id, created_at)`
 - 画师/作品/留言：`artists(qq_number)`、`artworks(artist_id)`、`guestbook_messages(artist_id, status)`
 - 多画风模型：`addon_templates(artist_id, sort_order)`、`art_styles(artist_id, sort_order)`、`style_sizes(art_style_id, sort_order)`、`style_addons(art_style_id)`、`size_addon_overrides(style_size_id)`、`artwork_size_tags(style_size_id)`
+- 埋点表（v44/v45 迁移内建，不在 schemaIndexes）：`events(name, ts)`、`events(artist_id, ts)`
 
 ## 常见问题与维护要点
 
 - **金额为什么不都是整数分？** 大部分金额列已用 `*_cents` 整数分；`price_tiers.price`、`price_snapshot`、`price_multipliers.multiplier` 等仍是 REAL（展示/系数用）。改价相关代码优先看 `order_price_entries`。
-- **改表结构怎么做？** 新增迁移（version 44+）追加到 `MIGRATIONS` 数组，不要改历史迁移（已应用的库不会重跑）。加列用 `ALTER TABLE ADD COLUMN`（事务内安全）；改 CHECK / DROP 父表必须事务外 + 关 FK + 回读校验（对照 v38/v43 教训）。
+- **改表结构怎么做？** 新增迁移（version 46+）追加到 `MIGRATIONS` 数组，不要改历史迁移（已应用的库不会重跑）。加列用 `ALTER TABLE ADD COLUMN`（事务内安全）；改 CHECK / DROP 父表必须事务外 + 关 FK + 回读校验（对照 v38/v43 教训）。
 - **价格对不上？** 先查 `order_price_entries`（真相源），再看 `order_price_breakdown`（下单快照）与 `order_payment_installments`（收款计划）。
-- **迁移测试**：`migration-v38/v40/v41/v43.test.js` 覆盖重建表、加列、DROP 表等边界场景，新增迁移应配套测试。
+- **迁移测试**：`migration-v38/v40/v41/v43/v45.test.js` 覆盖重建表、加列、DROP 表等边界场景，新增迁移应配套测试。
