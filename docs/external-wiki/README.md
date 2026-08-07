@@ -20,7 +20,7 @@ A 测用户为本项目编写了整套 wiki（架构/API/数据库/前端/后端
 | `wiki-快速开始指南.md` | 已按 master 重写（2026-08-07，四号）：入口修正 index.ts / 种子命令 seed.ts / 删除 SIGN_SECRET 虚构项 / compose 端口现状 |
 | `wiki-生产部署.md` | 已按 master 重写（2026-08-07，四号）：SIGN_SECRET→SESSION_SECRET / 端口映射现状与生产切换步骤 / Caddyfile 单主域（无泛解析） |
 | `wiki-环境配置管理.md` | 已按 master 重写（2026-08-07，四号）：纯 SQLite（无 PG/MySQL）/ 虚构变量对照表 / SENTRY_DSN_BACKEND 命名 |
-| `repowiki-重写批交付.md` | 重写批交付报告（`docs/comms/02-to-01-repowiki重写-交付.md`，2026-08-07） |
+| `repowiki-重写批交付.md` | 重写批交付报告（`docs/comms/04-to-01-repowiki-P0重写-交付-20260807.md`，2026-08-07） |
 | `wiki-画师管理接口.md` | 已按 master 修订（2026-08-07，四号）：server/src/*.js→*.ts（TS 迁移）、登录端点对齐 TOTP |
 | `wiki-会话管理.md` | 已按 master 修订（2026-08-07，四号）：删「刷新接口」表述——会话无刷新，仅文件签名刷新 useSignatureRefresh |
 | `wiki-认证协议.md` | 已按 master 修订（2026-08-07，四号）：唯一登录端点 POST /api/auth/verify，删 verify-totp/自动续期 |
@@ -60,11 +60,11 @@ A 测用户为本项目编写了整套 wiki（架构/API/数据库/前端/后端
 ## 处置建议
 
 1. **不直接改 wiki 原文**——外部产物，改它不如在仓库内维护正确版本（已按此原则在仓库内重写正确版本）
-2. **P0 已完成**：「认证接口」「数据库模式设计」及 P0 批「快速开始指南」「生产部署」「环境配置管理」共 5 篇已按当前 master 重写（TOTP 登录 / cookie 会话 / 29 张表实际 DDL / index.ts+seed.ts 入口 / 删虚构变量 / 纯 SQLite），交付报告见 `docs/comms/02-to-01-repowiki重写-交付.md` 与 `docs/comms/04-to-01-repowiki-P0重写-交付-20260807.md`
+2. **P0 已完成**：「认证接口」「数据库模式设计」及 P0 批「快速开始指南」「生产部署」「环境配置管理」共 5 篇已按当前 master 重写（TOTP 登录 / cookie 会话 / 29 张表实际 DDL / index.ts+seed.ts 入口 / 删虚构变量 / 纯 SQLite），交付报告见 `docs/comms/04-to-01-repowiki-P0重写-交付-20260807.md`
 3. **P2 已完成**：外部 13 处 🟡（认证 6 + 非认证 7）已按路线 B 在仓库内维护修订版（13 篇 `wiki-*.md`），交付报告见 `docs/comms/04-to-01-repowiki外部13处-交付-20260808.md`
 4. 若用户贡献者愿意，可把核对报告反馈给 ta 供修订
 
-## P2 非认证主题抽样（2026-08-07 四号修订，见 docs/comms/04-to-01-repowiki-P2非认证抽样-交付-20260807.md）
+## P2 非认证主题抽样（2026-08-07 四号修订，见 docs/comms/04-to-01-repowiki非认证-交付-20260807.md）
 
 | 文件 | 说明 |
 |------|------|
