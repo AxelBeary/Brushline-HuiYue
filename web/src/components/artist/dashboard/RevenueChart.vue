@@ -62,6 +62,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artistApi } from '../../../api/index.js'
 import { normalizeRevenue } from '../../../utils/dashboard-normalize.js'
+import { formatCents } from '../../../utils/money.js'
 // v0.38 第二批: 统一卡片头部（REQ-026 §二）
 import CardHead from '../visual/CardHead.vue'
 
@@ -73,10 +74,6 @@ const bars = ref([])
 const summary = ref({})
 
 /** 金额分 → 元 */
-function formatCents(cents) {
-  return ((cents || 0) / 100).toFixed(2)
-}
-
 /** 柱高百分比（最大值归一化；全 0 时柱子高度 0，不留空白——验收 1.4） */
 function barHeight(cents) {
   const max = Math.max(...bars.value.map(b => b.cents || 0), 1)

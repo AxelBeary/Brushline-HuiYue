@@ -26,6 +26,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artistApi } from '../../../api/index.js'
+import { formatCents } from '../../../utils/money.js'
 
 defineProps({
   /** 今日统计（getStats 返回，含 todayNewOrderCents / todayRevenueCents） */
@@ -61,10 +62,6 @@ async function fetchGreeting() {
 }
 
 /** 金额分 → 元（后端返分，前端 /100；无数据 ¥0） */
-function formatCents(cents) {
-  return ((cents || 0) / 100).toFixed(2)
-}
-
 onMounted(() => fetchGreeting())
 </script>
 
