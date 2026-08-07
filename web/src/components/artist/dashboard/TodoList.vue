@@ -91,15 +91,15 @@ onMounted(() => load())
 /* 逾期/截稿条目左侧朱砂标记（朱砂=逾期，语义一对一） */
 .todo-item--overdue, .todo-item--dueToday { border-left: 3px solid var(--zs); }
 .todo-tag { flex-shrink: 0; }
-.todo-order-no { font-weight: 600; font-size: 14px; color: var(--ink); flex-shrink: 0; font-family: var(--f-d); }
+.todo-order-no { font-weight: 600; font-size: calc(var(--font-scale, 1) * 14px); color: var(--ink); flex-shrink: 0; font-family: var(--f-d); }
 .todo-client {
-  font-size: 13px; color: var(--ink2);
+  font-size: calc(var(--font-scale, 1) * 13px); color: var(--ink2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
 }
 .todo-status { flex-shrink: 0; }
-.todo-deadline { font-size: 12px; color: var(--ink2); flex-shrink: 0; }
+.todo-deadline { font-size: calc(var(--font-scale, 1) * 12px); color: var(--ink2); flex-shrink: 0; }
 
-.todo-empty { color: var(--ink2); font-size: 13px; margin: 0; }
+.todo-empty { color: var(--ink2); font-size: calc(var(--font-scale, 1) * 13px); margin: 0; }
 
 /* 骨架条 */
 .todo-skeleton { display: flex; flex-direction: column; gap: 8px; }
@@ -113,6 +113,6 @@ onMounted(() => load())
 /* 错误态 */
 .module-error {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 24px 0; font-size: 13px; color: var(--ink2);
+  padding: 24px 0; font-size: calc(var(--font-scale, 1) * 13px); color: var(--ink2);
 }
 </style>

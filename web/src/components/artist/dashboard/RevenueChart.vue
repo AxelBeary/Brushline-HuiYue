@@ -108,12 +108,12 @@ onMounted(() => load())
 /* 收入主数值：文楷落款感 + 墨色不上色（REQ §1.3 数字用文楷；铁律：统计数字一律墨色——
    原 var(--color-primary) 在墨黑主题下映射浅花青，数字变浅蓝，一号审核记账修复） */
 .revenue-total {
-  font-size: 26px; font-weight: 700; color: var(--ink);
+  font-size: calc(var(--font-scale, 1) * 26px); font-weight: 700; color: var(--ink);
   font-family: var(--f-d);
   font-variant-numeric: tabular-nums;
 }
-.revenue-count { font-size: 13px; color: var(--ink2); }
-.revenue-change { font-size: 13px; font-weight: 600; }
+.revenue-count { font-size: calc(var(--font-scale, 1) * 13px); color: var(--ink2); }
+.revenue-change { font-size: calc(var(--font-scale, 1) * 13px); font-weight: 600; }
 .revenue-change--up { color: var(--sl); }
 .revenue-change--down { color: var(--zs); }
 
@@ -135,7 +135,7 @@ onMounted(() => load())
 }
 .chart-col:hover .chart-bar { filter: brightness(1.15); }
 .chart-label {
-  margin-top: 4px; font-size: 10px; color: var(--ink3);
+  margin-top: 4px; font-size: calc(var(--font-scale, 1) * 10px); color: var(--ink3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 
@@ -153,6 +153,6 @@ onMounted(() => load())
 /* 错误态 */
 .module-error {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 24px 0; font-size: 13px; color: var(--ink2);
+  padding: 24px 0; font-size: calc(var(--font-scale, 1) * 13px); color: var(--ink2);
 }
 </style>

@@ -85,9 +85,9 @@ onMounted(() => fetchGreeting())
 .greeting-area:hover { filter: brightness(1.04); }
 .greeting-area:active { filter: brightness(0.97); }
 .greeting-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.greeting-icon { font-size: 24px; }
-.greeting-text { font-size: 28px; font-weight: 400; color: var(--ink); margin: 0; }
-.greeting-date { margin-top: 6px; font-size: 12px; color: var(--ink2); }
+.greeting-icon { font-size: calc(var(--font-scale, 1) * 24px); }
+.greeting-text { font-size: calc(var(--font-scale, 1) * 28px); font-weight: 400; color: var(--ink); margin: 0; }
+.greeting-date { margin-top: 6px; font-size: calc(var(--font-scale, 1) * 12px); color: var(--ink2); }
 
 /* 问候语切换动画 */
 .greeting-fade-enter-active { transition: opacity 0.2s, transform 0.2s; }
@@ -98,7 +98,7 @@ onMounted(() => fetchGreeting())
 /* R52: 今日统计紧凑行 */
 .today-stats-row {
   display: flex; align-items: center; gap: 10px;
-  font-size: 14px; color: var(--ink2);
+  font-size: calc(var(--font-scale, 1) * 14px); color: var(--ink2);
 }
 /* 统计数字墨色不上色铁律（REQ §1.1）——strong 仅加粗等宽，颜色继承墨色 */
 .today-stats-item strong { font-variant-numeric: tabular-nums; color: var(--ink); font-family: var(--f-d); }
