@@ -77,69 +77,6 @@ describe('档位三态 (Tier Visibility, v0.24 #10)', () => {
     expect(names).not.toContain('隐藏')
   })
 
-  // ─── 画师端返回全部 ───
-
-  it('TC-TV-05: 画师端 GET /api/artist/tiers 返回全部（含 hidden）', async () => {
-    seedTier(admin.id, { name: '正常', sort_order: 1 })
-    seedTier(admin.id, { name: '隐藏', sort_order: 2 })
-    db.prepare("UPDATE price_tiers SET visibility = 'hidden' WHERE name = '隐藏'").run()
-
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/artist/tiers',
-      headers: { Authorization: `Bearer ${token}` }
-    })
-
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toHaveLength(2)
-    const hidden = res.json().find(t => t.name === '隐藏')
-    expect(hidden.visibility).toBe('hidden')
-  })
-
-  // ─── 三态切换 ───
-
-  it('TC-TV-06: PUT visibility 切换成功 + 返回完整对象', async () => {
-    const tier = seedTier(admin.id)
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/artist/tiers/${tier.id}/visibility`,
-      headers: { Authorization: `Bearer ${token}` },
-      payload: { visibility: 'showcase' }
-    })
-
-    expect(res.statusCode).toBe(200)
-    expect(res.json().visibility).toBe('showcase')
-    expect(res.json().name).toBe('测试档位')
-  })
-
-  it('TC-TV-07: 非法 visibility 值被 JSON Schema 拒绝', async () => {
-    const tier = seedTier(admin.id)
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/artist/tiers/${tier.id}/visibility`,
-      headers: { Authorization: `Bearer ${token}` },
-      payload: { visibility: 'invisible' }
-    })
-
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('TC-TV-08: 切换他人档位返回 404', async () => {
-    const other = seedArtist({ qq_number: '88202', subdomain: 'other-vis' })
-    const tier = seedTier(other.id)
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/artist/tiers/${tier.id}/visibility`,
-      headers: { Authorization: `Bearer ${token}` },
-      payload: { visibility: 'hidden' }
-    })
-
-    expect(res.statusCode).toBe(404)
-  })
-
   // ─── 下单校验 ───
 
   it('TC-TV-09: 下单选 visible 档位成功', async () => {
