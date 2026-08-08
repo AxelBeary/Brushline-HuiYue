@@ -4,11 +4,7 @@
       <CardHead :title="$t('dashboard.revenueTitle')">
         <template #extra>
           <!-- 维度切换：月/季/年 -->
-          <el-radio-group v-model="period" size="small" @change="load">
-            <el-radio-button value="month">{{ $t('dashboard.periodMonth') }}</el-radio-button>
-            <el-radio-button value="quarter">{{ $t('dashboard.periodQuarter') }}</el-radio-button>
-            <el-radio-button value="year">{{ $t('dashboard.periodYear') }}</el-radio-button>
-          </el-radio-group>
+          <SliderSwitch v-model="period" size="small" :options="periodOptions" @change="load" />
         </template>
       </CardHead>
     </template>
@@ -65,10 +61,18 @@ import { normalizeRevenue } from '../../../utils/dashboard-normalize.js'
 import { formatCents } from '../../../utils/money.js'
 // v0.38 第二批: 统一卡片头部（REQ-026 §二）
 import CardHead from '../visual/CardHead.vue'
+import SliderSwitch from '../SliderSwitch.vue'
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 
 const period = ref('month')
+
+// 05B: 维度切换滑块选项（月/季/年）
+const periodOptions = [
+  { value: 'month', label: t('dashboard.periodMonth') },
+  { value: 'quarter', label: t('dashboard.periodQuarter') },
+  { value: 'year', label: t('dashboard.periodYear') }
+]
 const state = ref('loading') // loading | ok | error
 const bars = ref([])
 const summary = ref({})
