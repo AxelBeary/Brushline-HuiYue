@@ -16,10 +16,10 @@
     </div>
 
     <template v-else>
-      <!-- 汇总区（加载中显示 -） -->
+      <!-- 汇总区（加载中显示 -；02D P1-1: 金额数字滚动——滚动原始分，¥ 前缀/格式化在外层） -->
       <div class="revenue-summary">
         <span class="revenue-total">
-          {{ state === 'loading' ? '-' : `¥${formatCents(summary.totalCents)}` }}
+          {{ state === 'loading' ? '-' : `¥${formatCents(totalCents.display)}` }}
         </span>
         <span v-if="state !== 'loading' && summary.orderCount != null" class="revenue-count">
           {{ $t('dashboard.revenueOrderCount', { n: summary.orderCount }) }}
@@ -34,7 +34,8 @@
         </span>
       </div>
 
-      <!-- 纯 CSS 柱状图（三号图表库选型前占位，后续可替换） -->
+      <!-- 纯 CSS 柱状图（三号图表库选型前占位，后续可替换）
+           02D P1-7: 数据到达后下一帧再设高度（height 0 → 实际值，transition 0.35s 触发柱状生长） -->
       <div v-if="state === 'loading'" class="chart-skeleton">
         <div v-for="i in bars.length" :key="i" class="chart-skeleton-bar"></div>
       </div>
@@ -44,7 +45,7 @@
             v-for="(bar, i) in bars" :key="i"
             class="chart-col" :title="`${bar.label}: ¥${formatCents(bar.cents)}`"
           >
-            <div class="chart-bar" :style="{ height: barHeight(bar.cents) }"></div>
+            <div class="chart-bar" :style="{ height: grown ? barHeight(bar.cents) : '0%' }"></div>
             <span class="chart-label">{{ bar.label }}</span>
           </div>
         </div>
@@ -54,11 +55,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artistApi } from '../../../api/index.js'
 import { normalizeRevenue } from '../../../utils/dashboard-normalize.js'
 import { formatCents } from '../../../utils/money.js'
+import { useCountUp } from '../../../utils/useCountUp.js'
 // v0.38 第二批: 统一卡片头部（REQ-026 §二）
 import CardHead from '../visual/CardHead.vue'
 import SliderSwitch from '../SliderSwitch.vue'
@@ -76,6 +78,8 @@ const periodOptions = [
 const state = ref('loading') // loading | ok | error
 const bars = ref([])
 const summary = ref({})
+/** 02D P1-7: 柱状生长标记——数据到达后下一帧置 true，height 0% → 实际值触发 transition */
+const grown = ref(false)
 
 /** 金额分 → 元 */
 /** 柱高百分比（最大值归一化；全 0 时柱子高度 0，不留空白——验收 1.4） */
@@ -84,14 +88,20 @@ function barHeight(cents) {
   return `${Math.round(((cents || 0) / max) * 100)}%`
 }
 
+// 02D P1-1: 汇总金额滚动（原始分，外层 ¥ + formatCents）
+const totalCents = useCountUp(computed(() => summary.value.totalCents ?? 0))
+
 async function load() {
   state.value = 'loading'
+  grown.value = false
   try {
     const res = await artistApi.getDashboardRevenue(period.value)
     const norm = normalizeRevenue(res, period.value, locale.value)
     bars.value = norm.bars
     summary.value = norm.summary
     state.value = 'ok'
+    // 02D P1-7: 柱状生长——数据渲染（height 0%）后下一帧再设实际高度，transition 0.35s 从底部生长
+    requestAnimationFrame(() => { grown.value = true })
   } catch {
     state.value = 'error'
   }
