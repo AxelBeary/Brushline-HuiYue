@@ -55,7 +55,7 @@
               @click="toggleSize(sz.id)"
             >
               <span class="tpl-style-size-name">{{ sz.name }}</span>
-              <span class="tpl-style-size-price">¥{{ sz.base_price }}</span>
+              <span class="tpl-style-size-price">{{ formatYuanValue(sz.base_price) }}</span>
               <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
             </button>
           </div>
@@ -97,7 +97,7 @@
         @click="toggleSize(sz.id)"
       >
         <span class="tpl-style-size-name">{{ sz.name }}</span>
-        <span class="tpl-style-size-price">¥{{ sz.base_price }}</span>
+        <span class="tpl-style-size-price">{{ formatYuanValue(sz.base_price) }}</span>
         <span v-if="sz.id === selectedSizeId" class="tpl-style-size-check">✓</span>
       </button>
     </div>
@@ -114,6 +114,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 // v0.35 联调：resolveSizeImagePath 尺寸图解析纯函数（artwork_image_path > image > 封面兜底由 displayImageUrl 处理）
 import { useArtistData, resolveSizeImagePath } from '../../composables/useArtistData.js'
+import { formatYuanValue } from '../../utils/money.js'
 
 const props = defineProps({
   /** 画风列表（GET /api/public/styles/:subdomain，只含 is_active=1，按 sort_order 排序） */
@@ -182,7 +183,7 @@ function onStyleChange() {
 function fromLabel(style) {
   const prices = (style.sizes || []).map(s => s.base_price)
   if (!prices.length) return '—'
-  return `¥${Math.min(...prices)}${'+'}`
+  return formatYuanValue(Math.min(...prices)) + '+'
 }
 
 /** 移动端滑动切换（与 TplTierGrid 一致的 touchstart/touchend 逻辑） */

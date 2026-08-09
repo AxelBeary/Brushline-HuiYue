@@ -14,7 +14,7 @@
         @click="activeIndex = idx"
       >
         <span class="tpl-tier-menu-name">{{ tier.name }}</span>
-        <span class="tpl-tier-menu-price">¥{{ tier.price }}</span>
+        <span class="tpl-tier-menu-price">{{ formatYuanValue(tier.price) }}</span>
         <span v-if="tier.visibility === 'showcase'" class="tpl-tier-menu-badge">{{ $t('artistHome.tierShowcase') }}</span>
       </button>
     </div>
@@ -46,7 +46,7 @@
         <div class="tpl-tier-display-info">
           <div class="tpl-tier-display-head">
             <h3 class="tpl-tier-display-name">{{ activeTier.name }}</h3>
-            <span class="tpl-tier-display-price">¥{{ activeTier.price }}</span>
+            <span class="tpl-tier-display-price">{{ formatYuanValue(activeTier.price) }}</span>
           </div>
           <p v-if="activeTier.description" class="tpl-tier-display-desc">{{ activeTier.description }}</p>
           <p v-if="activeTier.work_days" class="tpl-tier-display-days">
@@ -72,6 +72,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArtistData } from '../../composables/useArtistData.js'
+import { formatYuanValue } from '../../utils/money.js'
 
 const props = defineProps({
   tiers: { type: Array, default: () => [] },
