@@ -91,11 +91,15 @@ function barHeight(cents) {
 // 02D P1-1: 汇总金额滚动（原始分，外层 ¥ + formatCents）
 const totalCents = useCountUp(computed(() => summary.value.totalCents ?? 0))
 
+// G-2（R-22）: 请求序号守卫——狂切周期时晚到的慢请求直接丢弃（对齐 useOrderForm seq 模式）
+let loadSeq = 0
 async function load() {
+  const mySeq = ++loadSeq
   state.value = 'loading'
   grown.value = false
   try {
     const res = await artistApi.getDashboardRevenue(period.value)
+    if (mySeq !== loadSeq) return
     const norm = normalizeRevenue(res, period.value, locale.value)
     bars.value = norm.bars
     summary.value = norm.summary
@@ -103,7 +107,7 @@ async function load() {
     // 02D P1-7: 柱状生长——数据渲染（height 0%）后下一帧再设实际高度，transition 0.35s 从底部生长
     requestAnimationFrame(() => { grown.value = true })
   } catch {
-    state.value = 'error'
+    if (mySeq === loadSeq) state.value = 'error'
   }
 }
 
