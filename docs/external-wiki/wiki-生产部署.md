@@ -95,7 +95,7 @@ Web --> DB
 | `CORS_ORIGIN` | 按需 | 留空 = 禁止跨域（前端与 API 同域部署，推荐） |
 | `TZ` | `Asia/Shanghai` | compose 已内置 |
 
-> ⚠️ 外部旧文档的「必须修改：…SIGN_SECRET…」——**没有这个变量**。文件签名 URL 用的就是 `SESSION_SECRET`（file-sign.ts `getSecret()`：生产未设置直接 throw，开发环境回退到 `dev-secret-change-in-production`）。
+> ⚠️ 外部旧文档的「必须修改：…SIGN_SECRET…」——**没有这个变量**。文件签名 URL 用的就是 `SESSION_SECRET`（file-sign.ts `getSecret()`：生产未设置直接 throw（fail-fast）；开发环境随机生成开发密钥（P3-23，审计批E，与会话密钥策略对齐，不再回退固定串）。
 
 **`TRUST_PROXY`**：compose 已内置 `172.16.0.0/12,10.0.0.0/8,192.168.0.0/16`（仅信任 Docker 内网段，防 X-Forwarded-For 伪造）。非 Docker 环境按自己的反代网段调整。
 
