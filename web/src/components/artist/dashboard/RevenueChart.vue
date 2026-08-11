@@ -40,7 +40,7 @@
         <div v-for="i in bars.length" :key="i" class="chart-skeleton-bar"></div>
       </div>
       <div v-else class="chart-area">
-        <div class="chart-bars">
+        <div class="chart-bars" :class="{ 'chart-bars--dense': period === 'month' }">
           <div
             v-for="(bar, i) in bars" :key="i"
             class="chart-col" :title="`${bar.label}: ¥${formatCents(bar.cents)}`"
@@ -152,6 +152,11 @@ onMounted(() => load())
 .chart-label {
   margin-top: 4px; font-size: calc(var(--font-scale, 1) * 10px); color: var(--ink3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+/* REQ-043 I3: 375px 移动端——月份视图 31 根日柱每根仅约 8px，双位日标签必然被裁切；
+   窄屏隐藏日标签（精确值仍可从列 title 与汇总区获取），季度/年列宽充足保持标签 */
+@media (max-width: 600px) {
+  .chart-bars--dense .chart-label { display: none; }
 }
 
 /* 骨架屏 */
