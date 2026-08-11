@@ -158,6 +158,11 @@ onMounted(() => load())
 @media (max-width: 600px) {
   .chart-bars--dense .chart-label { display: none; }
 }
+/* 812-C B9: 窄屏卡片头部标题与「月/季/年」滑块可换行/收缩，防重叠溢出（桌面不变） */
+@media (max-width: 768px) {
+  :deep(.v-card-head) { flex-wrap: wrap; row-gap: 8px; }
+  :deep(.v-card-head-extra) { min-width: 0; }
+}
 
 /* 骨架屏 */
 .chart-skeleton { display: flex; align-items: flex-end; gap: 4px; height: 140px; }
