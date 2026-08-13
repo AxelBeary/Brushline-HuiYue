@@ -114,6 +114,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 // v0.35 联调：resolveSizeImagePath 尺寸图解析纯函数（artwork_image_path > image > 封面兜底由 displayImageUrl 处理）
 import { useArtistData, resolveSizeImagePath } from '../../composables/useArtistData.js'
+import { useTouchSwipe } from '../../composables/useTouchSwipe.js'
 import { formatYuanValue } from '../../utils/money.js'
 
 const props = defineProps({
@@ -186,18 +187,14 @@ function fromLabel(style) {
   return formatYuanValue(Math.min(...prices)) + '+'
 }
 
-/** 移动端滑动切换（与 TplTierGrid 一致的 touchstart/touchend 逻辑） */
-let touchStartX = 0
-function onTouchStart(e) {
-  touchStartX = e.touches[0].clientX
-}
+// 波 M：触摸滑动抽公共（阈值 50px，行为与 TplTierGrid 一致）
+const { onTouchStart, onTouchEnd: onSwipeEnd } = useTouchSwipe({ threshold: 50 })
 function onTouchEnd(e) {
-  const deltaX = e.changedTouches[0].clientX - touchStartX
-  if (Math.abs(deltaX) < 50) return // 阈值 50px，防误触
-  if (deltaX < 0 && activeIndex.value < props.styles.length - 1) {
+  const dir = onSwipeEnd(e)
+  if (dir === 'left' && activeIndex.value < props.styles.length - 1) {
     activeIndex.value++ // 左滑 → 下一个
     onStyleChange()
-  } else if (deltaX > 0 && activeIndex.value > 0) {
+  } else if (dir === 'right' && activeIndex.value > 0) {
     activeIndex.value-- // 右滑 → 上一个
     onStyleChange()
   }
@@ -311,7 +308,8 @@ function goOrder() {
 /* v0.35 F3: 大图切换淡入淡出（共享逻辑，各模板可覆盖时长） */
 .tpl-style-img-fade-enter-active,
 .tpl-style-img-fade-leave-active {
-  transition: opacity 0.18s var(--ease-out);
+  /* T 波移交 M：0.18s → --dur-fast(.15s) 就近等值 */
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 .tpl-style-img-fade-enter-from,
 .tpl-style-img-fade-leave-to {
