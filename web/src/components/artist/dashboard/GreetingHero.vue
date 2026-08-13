@@ -110,19 +110,19 @@ onMounted(() => fetchGreeting())
 .greeting-date { margin-top: 6px; font-size: calc(var(--font-scale, 1) * 12px); color: var(--ink2); }
 
 /* 问候语切换动画（点击换一句：0.2s 淡入） */
-.greeting-fade-enter-active { transition: opacity 0.2s, transform 0.2s; }
-.greeting-fade-leave-active { transition: opacity 0.15s; }
+.greeting-fade-enter-active { transition: opacity var(--dur-mid), transform var(--dur-mid); }
+.greeting-fade-leave-active { transition: opacity var(--dur-fast); }
 .greeting-fade-enter-from { opacity: 0; transform: translateY(6px); }
 .greeting-fade-leave-to { opacity: 0; }
 
 /* 02D P0: 首次进入动画——blur 到清晰 + 上移浮现（一次性 0.45s，克制纪律：不循环） */
 .greeting-enter-enter-active { transition: opacity 0.45s ease-out, transform 0.45s ease-out, filter 0.45s ease-out; }
 .greeting-enter-enter-from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
-.greeting-enter-leave-active { transition: opacity 0.15s; }
+.greeting-enter-leave-active { transition: opacity var(--dur-fast); }
 .greeting-enter-leave-to { opacity: 0; }
 
 /* 02D P0: 今日统计行 fade-up（delay 0.15s 与每日一句衔接；一次性） */
-.stats-fade-up { animation: stats-up 0.3s var(--ease-out) both; animation-delay: 0.15s; }
+.stats-fade-up { animation: stats-up var(--dur-slow) var(--ease-out) both; animation-delay: 0.15s; }
 @keyframes stats-up {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
