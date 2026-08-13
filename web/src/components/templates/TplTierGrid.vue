@@ -248,7 +248,7 @@ function goOrder() {
 }
 .tpl-tier-select-btn:hover:not(:disabled) {
   opacity: 0.88;
-  transform: translateY(-1px);
+  /* T 波：hover 禁位移——保留透明度加深反馈 */
 }
 .tpl-tier-select-btn:disabled {
   opacity: 0.4;
