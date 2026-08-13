@@ -72,6 +72,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArtistData } from '../../composables/useArtistData.js'
+import { useTouchSwipe } from '../../composables/useTouchSwipe.js'
 import { formatYuanValue } from '../../utils/money.js'
 
 const props = defineProps({
@@ -93,17 +94,13 @@ const artistStatus = computed(() => props.artist?.status ?? 'open')
 const activeIndex = ref(0)
 const activeTier = computed(() => props.tiers[activeIndex.value] || null)
 
-/** 移动端滑动切换（touchstart/touchend 计算 deltaX） */
-let touchStartX = 0
-function onTouchStart(e) {
-  touchStartX = e.touches[0].clientX
-}
+// 波 M：触摸滑动抽公共（阈值 50px，行为与 TplStyleGrid 一致）
+const { onTouchStart, onTouchEnd: onSwipeEnd } = useTouchSwipe({ threshold: 50 })
 function onTouchEnd(e) {
-  const deltaX = e.changedTouches[0].clientX - touchStartX
-  if (Math.abs(deltaX) < 50) return // 阈值 50px，防误触
-  if (deltaX < 0 && activeIndex.value < props.tiers.length - 1) {
+  const dir = onSwipeEnd(e)
+  if (dir === 'left' && activeIndex.value < props.tiers.length - 1) {
     activeIndex.value++ // 左滑 → 下一个
-  } else if (deltaX > 0 && activeIndex.value > 0) {
+  } else if (dir === 'right' && activeIndex.value > 0) {
     activeIndex.value-- // 右滑 → 上一个
   }
 }
