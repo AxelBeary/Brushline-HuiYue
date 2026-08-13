@@ -239,7 +239,7 @@ function goOrder() {
   border-radius: 10px;
   background: var(--pal-surface);
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--dur-mid) var(--ease-out), background-color var(--dur-mid) var(--ease-out), box-shadow var(--dur-mid) var(--ease-out);
   text-align: left;
   font-family: inherit;
 }
@@ -311,7 +311,7 @@ function goOrder() {
 /* v0.35 F3: 大图切换淡入淡出（共享逻辑，各模板可覆盖时长） */
 .tpl-style-img-fade-enter-active,
 .tpl-style-img-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity 0.18s var(--ease-out);
 }
 .tpl-style-img-fade-enter-from,
 .tpl-style-img-fade-leave-to {
@@ -338,7 +338,7 @@ function goOrder() {
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--dur-mid) var(--ease-out), background-color var(--dur-mid) var(--ease-out), box-shadow var(--dur-mid) var(--ease-out);
 }
 .tpl-style-size-row:hover {
   border-color: var(--color-primary);
@@ -378,7 +378,7 @@ function goOrder() {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s, transform 0.15s;
+  transition: opacity var(--dur-mid), transform var(--dur-fast);
   font-family: inherit;
 }
 .tpl-style-order-btn:hover:not(:disabled) {

@@ -146,7 +146,7 @@ onMounted(() => load())
   width: 100%; max-width: 36px; min-height: 2px;
   border-radius: 3px 3px 0 0;
   background: linear-gradient(180deg, var(--hq), color-mix(in srgb, var(--hq) 25%, transparent));
-  transition: height 0.35s ease;
+  transition: height var(--dur-slow) var(--ease-out);
 }
 .chart-col:hover .chart-bar { filter: brightness(1.15); }
 .chart-label {

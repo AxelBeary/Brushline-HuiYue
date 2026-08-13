@@ -140,7 +140,7 @@ function goOrder() {
   border-radius: 10px;
   background: var(--pal-surface);
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--dur-mid) var(--ease-out), background-color var(--dur-mid) var(--ease-out), box-shadow var(--dur-mid) var(--ease-out);
   text-align: left;
   font-family: inherit;
 }
@@ -243,7 +243,7 @@ function goOrder() {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s, transform 0.15s;
+  transition: opacity var(--dur-mid), transform var(--dur-fast);
   font-family: inherit;
 }
 .tpl-tier-select-btn:hover:not(:disabled) {

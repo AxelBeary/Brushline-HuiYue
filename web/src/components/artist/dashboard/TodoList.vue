@@ -85,7 +85,7 @@ onMounted(() => load())
 .todo-item {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px; border-radius: var(--r-m); cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-fast);
 }
 .todo-item:hover { background: var(--sb-hover); }
 /* 逾期/截稿条目左侧朱砂标记（朱砂=逾期，语义一对一） */
